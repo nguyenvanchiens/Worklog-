@@ -10,7 +10,16 @@ import Avatar from '../components/common/Avatar.jsx'
 import Modal from '../components/common/Modal.jsx'
 import { useConfirm } from '../components/common/ConfirmProvider.jsx'
 import ProjectCombobox from '../components/common/ProjectCombobox.jsx'
-import { formatDate, isOverdue, elapsedFrom, taskStateSince, formatDateTime, timeFromNow } from '../utils/format.js'
+import {
+  formatDate,
+  isOverdue,
+  elapsedFrom,
+  taskStateSince,
+  formatDateTime,
+  timeFromNow,
+  deriveJiraLink,
+  isAutoJiraLink,
+} from '../utils/format.js'
 
 const STATUS_OPTIONS = ['todo', 'in_progress', 'review', 'waiting_build', 'done']
 const PRIORITY_OPTIONS = ['low', 'medium', 'high', 'urgent']
@@ -301,8 +310,17 @@ export default function Tasks() {
             <input
               className="input"
               value={form.title}
-              onChange={(e) => setForm((f) => ({ ...f, title: e.target.value }))}
-              placeholder="VD: Tích hợp API thanh toán"
+              onChange={(e) =>
+                setForm((f) => {
+                  const title = e.target.value
+                  return {
+                    ...f,
+                    title,
+                    link: isAutoJiraLink(f.link) ? deriveJiraLink(title) : f.link,
+                  }
+                })
+              }
+              placeholder="VD: HNCW-348 [Vận hành] Tích hợp API thanh toán"
               autoFocus
             />
           </div>
@@ -322,10 +340,13 @@ export default function Tasks() {
             <input
               className="input"
               type="url"
-              placeholder="https://jira.company.com/browse/ABC-123"
+              placeholder="https://issue.fastlink.vn/browse/HNCW-348"
               value={form.link}
               onChange={(e) => setForm((f) => ({ ...f, link: e.target.value }))}
             />
+            <div className="text-[11px] text-gray-500 mt-1">
+              Tự sinh khi tiêu đề có mã ticket (HNCW-348, SMT-35...). Bạn có thể sửa lại nếu cần.
+            </div>
           </div>
           <div className="grid grid-cols-2 gap-3">
             <div>

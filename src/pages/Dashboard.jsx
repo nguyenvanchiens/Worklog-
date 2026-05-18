@@ -24,6 +24,7 @@ import {
   Trash2,
   CalendarClock,
   Pencil,
+  Filter,
 } from 'lucide-react'
 import { useApp } from '../context/AppContext.jsx'
 import Avatar from '../components/common/Avatar.jsx'
@@ -47,6 +48,8 @@ import {
   durationMs,
   elapsedFrom,
   taskStateSince,
+  deriveJiraLink,
+  isAutoJiraLink,
 } from '../utils/format.js'
 
 const TAB_STORAGE_KEY = 'tm_dashboard_tab'
@@ -345,6 +348,15 @@ function ActionsTab({ actions, getMember, getProject }) {
   )
 }
 
+const TEAM_FILTER_OPTIONS = [
+  { key: 'all',           label: 'Tất cả',     tone: 'slate'  },
+  { key: 'in_progress',   label: 'Đang làm',   tone: 'blue'   },
+  { key: 'waiting_build', label: 'Chờ build',  tone: 'orange' },
+  { key: 'review',        label: 'Đang review', tone: 'amber' },
+  { key: 'todo',          label: 'Chưa làm',   tone: 'gray'   },
+  { key: 'overdue',       label: 'Quá hạn',    tone: 'red'    },
+]
+
 function TeamTab({ teamStatus, getProject }) {
   const {
     members,
@@ -361,10 +373,30 @@ function TeamTab({ teamStatus, getProject }) {
   const isLeader = currentUser?.role === 'Leader'
   const confirm = useConfirm()
 
+  const [statusFilter, setStatusFilter] = useState('all')
   const [addTaskFor, setAddTaskFor] = useState(null) // member object
   const [editTaskFor, setEditTaskFor] = useState(null) // task object
   const [buildFor, setBuildFor] = useState(null)     // task object
   const [completeFor, setCompleteFor] = useState(null) // task object
+
+  const filteredTeamStatus = useMemo(() => {
+    if (statusFilter === 'all') return teamStatus
+    return teamStatus
+      .map((row) => {
+        const tasks =
+          statusFilter === 'overdue'
+            ? row.activeTasks.filter((t) => isOverdue(t.dueDate))
+            : row.activeTasks.filter((t) => t.status === statusFilter)
+        return { ...row, activeTasks: tasks }
+      })
+      .filter((row) => row.activeTasks.length > 0)
+  }, [teamStatus, statusFilter])
+
+  const toggleStatus = (key) => {
+    setStatusFilter((curr) => (curr === key ? 'all' : key))
+  }
+
+  const activeOpt = TEAM_FILTER_OPTIONS.find((o) => o.key === statusFilter)
 
   return (
     <>
@@ -373,7 +405,9 @@ function TeamTab({ teamStatus, getProject }) {
           <Users size={16} className="text-gray-400" />
           <div className="flex-1">
             <div className="font-semibold text-gray-800 text-sm">
-              Trạng thái thời gian thực của {teamStatus.length} thành viên
+              {statusFilter === 'all'
+                ? `Trạng thái thời gian thực của ${teamStatus.length} thành viên`
+                : `${filteredTeamStatus.length}/${teamStatus.length} thành viên có task "${activeOpt?.label}"`}
             </div>
             <div className="text-xs text-gray-500">
               Click "Chờ build" để gửi task lên leader · Leader tick "Đã build" để chuyển sang Lịch sử Build
@@ -383,39 +417,64 @@ function TeamTab({ teamStatus, getProject }) {
             Xem toàn bộ task →
           </Link>
         </div>
-        <div className="divide-y divide-gray-100">
-          {teamStatus.map((row) => (
-            <MemberRow
-              key={row.member.id}
-              row={row}
-              getProject={getProject}
-              isLeader={isLeader}
-              onAddTask={() => setAddTaskFor(row.member)}
-              onEditTask={(task) => setEditTaskFor(task)}
-              onChangeStatus={(task, status) => updateTask(task.id, { status })}
-              onRequestBuild={(task) => setBuildFor(task)}
-              onCompleteBuild={(task) => setCompleteFor(task)}
-              onCancelBuild={async (task) => {
-                const ok = await confirm({
-                  title: 'Huỷ yêu cầu build?',
-                  message: `Bạn có chắc muốn huỷ yêu cầu build cho "${task.title}"?\nTask sẽ trở về trạng thái trước đó.`,
-                  confirmLabel: 'Huỷ yêu cầu build',
-                  cancelLabel: 'Đóng',
-                  tone: 'warning',
-                })
-                if (ok) cancelTaskBuild(task.id)
-              }}
-              onDelete={async (task) => {
-                const ok = await confirm({
-                  title: 'Xoá task',
-                  message: `Xoá task "${task.title}"?\nHành động này không thể hoàn tác.`,
-                  confirmLabel: 'Xoá task',
-                  tone: 'danger',
-                })
-                if (ok) removeTask(task.id)
-              }}
-            />
+
+        <div className="px-5 py-3 border-b border-gray-100 flex items-center gap-2 flex-wrap">
+          <span className="text-xs text-gray-500 mr-1 inline-flex items-center gap-1">
+            <Filter size={12} /> Lọc trạng thái:
+          </span>
+          {TEAM_FILTER_OPTIONS.map((opt) => (
+            <FilterPill
+              key={opt.key}
+              active={statusFilter === opt.key}
+              tone={opt.tone}
+              onClick={() => setStatusFilter(opt.key)}
+            >
+              {opt.label}
+            </FilterPill>
           ))}
+        </div>
+
+        <div className="divide-y divide-gray-100">
+          {filteredTeamStatus.length === 0 ? (
+            <div className="py-10 text-center text-sm text-gray-400">
+              Không có thành viên nào có task ở trạng thái "{activeOpt?.label}".
+            </div>
+          ) : (
+            filteredTeamStatus.map((row) => (
+              <MemberRow
+                key={row.member.id}
+                row={row}
+                getProject={getProject}
+                isLeader={isLeader}
+                statusFilter={statusFilter}
+                onToggleStatus={toggleStatus}
+                onAddTask={() => setAddTaskFor(row.member)}
+                onEditTask={(task) => setEditTaskFor(task)}
+                onChangeStatus={(task, status) => updateTask(task.id, { status })}
+                onRequestBuild={(task) => setBuildFor(task)}
+                onCompleteBuild={(task) => setCompleteFor(task)}
+                onCancelBuild={async (task) => {
+                  const ok = await confirm({
+                    title: 'Huỷ yêu cầu build?',
+                    message: `Bạn có chắc muốn huỷ yêu cầu build cho "${task.title}"?\nTask sẽ trở về trạng thái trước đó.`,
+                    confirmLabel: 'Huỷ yêu cầu build',
+                    cancelLabel: 'Đóng',
+                    tone: 'warning',
+                  })
+                  if (ok) cancelTaskBuild(task.id)
+                }}
+                onDelete={async (task) => {
+                  const ok = await confirm({
+                    title: 'Xoá task',
+                    message: `Xoá task "${task.title}"?\nHành động này không thể hoàn tác.`,
+                    confirmLabel: 'Xoá task',
+                    tone: 'danger',
+                  })
+                  if (ok) removeTask(task.id)
+                }}
+              />
+            ))
+          )}
         </div>
       </div>
 
@@ -842,6 +901,8 @@ function MemberRow({
   row,
   getProject,
   isLeader,
+  statusFilter = 'all',
+  onToggleStatus,
   onAddTask,
   onEditTask,
   onChangeStatus,
@@ -884,14 +945,44 @@ function MemberRow({
         </div>
 
         <div className="hidden lg:flex items-center gap-2 text-xs">
-          <CountChip label="đang làm" value={counts.inProgress} tone="blue" />
+          <CountChip
+            label="đang làm"
+            value={counts.inProgress}
+            tone="blue"
+            active={statusFilter === 'in_progress'}
+            onClick={() => onToggleStatus?.('in_progress')}
+          />
           {counts.waitingBuild > 0 && (
-            <CountChip label="chờ build" value={counts.waitingBuild} tone="orange" />
+            <CountChip
+              label="chờ build"
+              value={counts.waitingBuild}
+              tone="orange"
+              active={statusFilter === 'waiting_build'}
+              onClick={() => onToggleStatus?.('waiting_build')}
+            />
           )}
-          <CountChip label="review" value={counts.review} tone="amber" />
-          <CountChip label="chờ" value={counts.todo} tone="gray" />
+          <CountChip
+            label="review"
+            value={counts.review}
+            tone="amber"
+            active={statusFilter === 'review'}
+            onClick={() => onToggleStatus?.('review')}
+          />
+          <CountChip
+            label="chờ"
+            value={counts.todo}
+            tone="gray"
+            active={statusFilter === 'todo'}
+            onClick={() => onToggleStatus?.('todo')}
+          />
           {counts.overdue > 0 && (
-            <CountChip label="quá hạn" value={counts.overdue} tone="red" />
+            <CountChip
+              label="quá hạn"
+              value={counts.overdue}
+              tone="red"
+              active={statusFilter === 'overdue'}
+              onClick={() => onToggleStatus?.('overdue')}
+            />
           )}
         </div>
 
@@ -1141,8 +1232,17 @@ function AddTaskModal({ open, member, projects, onClose, onSubmit }) {
           <input
             className="input"
             value={form.title}
-            onChange={(e) => setForm((f) => ({ ...f, title: e.target.value }))}
-            placeholder="VD: Sửa form đăng ký"
+            onChange={(e) =>
+              setForm((f) => {
+                const title = e.target.value
+                return {
+                  ...f,
+                  title,
+                  link: isAutoJiraLink(f.link) ? deriveJiraLink(title) : f.link,
+                }
+              })
+            }
+            placeholder="VD: HNCW-348 [Vận hành] Sửa form đăng ký"
             autoFocus
           />
         </div>
@@ -1162,12 +1262,12 @@ function AddTaskModal({ open, member, projects, onClose, onSubmit }) {
           <input
             className="input"
             type="url"
-            placeholder="https://jira.company.com/browse/ABC-123"
+            placeholder="https://issue.fastlink.vn/browse/HNCW-348"
             value={form.link}
             onChange={(e) => setForm((f) => ({ ...f, link: e.target.value }))}
           />
           <div className="text-[11px] text-gray-500 mt-1">
-            Khi điền, click vào tên task ở bảng team sẽ mở link này trong tab mới.
+            Tự sinh khi tiêu đề có mã ticket (HNCW-348, SMT-35...). Bạn có thể sửa lại nếu cần.
           </div>
         </div>
         <div>
@@ -1259,7 +1359,16 @@ function EditTaskModal({ open, task, onClose, onSubmit }) {
           <input
             className="input"
             value={form.title}
-            onChange={(e) => setForm((f) => ({ ...f, title: e.target.value }))}
+            onChange={(e) =>
+              setForm((f) => {
+                const title = e.target.value
+                return {
+                  ...f,
+                  title,
+                  link: isAutoJiraLink(f.link) ? deriveJiraLink(title) : f.link,
+                }
+              })
+            }
             autoFocus
           />
         </div>
@@ -1279,10 +1388,13 @@ function EditTaskModal({ open, task, onClose, onSubmit }) {
           <input
             className="input"
             type="url"
-            placeholder="https://jira.company.com/browse/ABC-123"
+            placeholder="https://issue.fastlink.vn/browse/HNCW-348"
             value={form.link}
             onChange={(e) => setForm((f) => ({ ...f, link: e.target.value }))}
           />
+          <div className="text-[11px] text-gray-500 mt-1">
+            Tự sinh khi tiêu đề có mã ticket (HNCW-348, SMT-35...). Bạn có thể sửa lại nếu cần.
+          </div>
         </div>
         <div>
           <label className="label">Dự án</label>
@@ -1541,14 +1653,7 @@ function StatusDropdown({ task, onChange }) {
   )
 }
 
-function CountChip({ label, value, tone }) {
-  if (value === 0 && tone !== 'red') {
-    return (
-      <span className="px-2 py-1 rounded bg-gray-50 text-gray-400 text-[11px]">
-        {label} <span className="font-semibold">0</span>
-      </span>
-    )
-  }
+function CountChip({ label, value, tone, onClick, active = false }) {
   const tones = {
     blue:   'bg-blue-50 text-blue-700',
     amber:  'bg-amber-50 text-amber-700',
@@ -1556,10 +1661,69 @@ function CountChip({ label, value, tone }) {
     gray:   'bg-gray-100 text-gray-700',
     red:    'bg-red-50 text-red-700',
   }
-  return (
-    <span className={`px-2 py-1 rounded text-[11px] ${tones[tone]}`}>
+  const activeTones = {
+    blue:   'bg-blue-600 text-white ring-2 ring-blue-200',
+    amber:  'bg-amber-600 text-white ring-2 ring-amber-200',
+    orange: 'bg-orange-600 text-white ring-2 ring-orange-200',
+    gray:   'bg-gray-700 text-white ring-2 ring-gray-200',
+    red:    'bg-red-600 text-white ring-2 ring-red-200',
+  }
+  const zero = value === 0 && tone !== 'red'
+  const base = active
+    ? activeTones[tone]
+    : zero
+      ? 'bg-gray-50 text-gray-400'
+      : tones[tone]
+  const cls = `px-2 py-1 rounded text-[11px] transition-colors ${base} ${
+    onClick ? 'cursor-pointer hover:opacity-80' : ''
+  }`
+  const content = (
+    <>
       {label} <span className="font-semibold">{value}</span>
-    </span>
+    </>
+  )
+  if (onClick) {
+    return (
+      <button
+        type="button"
+        onClick={onClick}
+        className={cls}
+        title={active ? `Bỏ lọc "${label}"` : `Lọc theo "${label}"`}
+      >
+        {content}
+      </button>
+    )
+  }
+  return <span className={cls}>{content}</span>
+}
+
+function FilterPill({ active, tone = 'slate', onClick, children }) {
+  const inactive = {
+    slate:  'bg-gray-100 text-gray-700 hover:bg-gray-200',
+    blue:   'bg-blue-50 text-blue-700 hover:bg-blue-100',
+    orange: 'bg-orange-50 text-orange-700 hover:bg-orange-100',
+    amber:  'bg-amber-50 text-amber-700 hover:bg-amber-100',
+    gray:   'bg-gray-50 text-gray-600 hover:bg-gray-100',
+    red:    'bg-red-50 text-red-700 hover:bg-red-100',
+  }
+  const activeCls = {
+    slate:  'bg-gray-800 text-white',
+    blue:   'bg-blue-600 text-white',
+    orange: 'bg-orange-600 text-white',
+    amber:  'bg-amber-600 text-white',
+    gray:   'bg-gray-700 text-white',
+    red:    'bg-red-600 text-white',
+  }
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className={`px-2.5 py-1 rounded-full text-xs font-medium transition-colors ${
+        active ? activeCls[tone] : inactive[tone]
+      }`}
+    >
+      {children}
+    </button>
   )
 }
 

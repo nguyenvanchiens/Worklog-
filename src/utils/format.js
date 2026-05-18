@@ -74,6 +74,27 @@ export function elapsedFrom(iso) {
   return formatDuration(ms)
 }
 
+export const JIRA_BASE_URL = 'https://issue.fastlink.vn/browse/'
+
+// Bóc mã ticket dạng "HNCW-348", "SMT-35"... ra khỏi tiêu đề.
+// Khớp ký tự A-Z viết hoa (>=2 chữ) — dấu gạch — số, theo word boundary.
+export function extractTicketKey(title) {
+  if (!title) return null
+  const m = title.match(/\b([A-Z][A-Z0-9]{1,}-\d+)\b/)
+  return m ? m[1] : null
+}
+
+export function deriveJiraLink(title) {
+  const key = extractTicketKey(title)
+  return key ? `${JIRA_BASE_URL}${key}` : ''
+}
+
+// Link được coi là "auto" (do hệ thống tự suy ra) nếu rỗng hoặc trỏ về base Jira.
+// Khi user gõ tay link khác → giữ nguyên, không ghi đè.
+export function isAutoJiraLink(link) {
+  return !link || link.startsWith(JIRA_BASE_URL)
+}
+
 // Mốc thời gian "bắt đầu trạng thái hiện tại" cho 1 task
 export function taskStateSince(task) {
   if (!task) return null
