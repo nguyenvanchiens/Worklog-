@@ -1,7 +1,8 @@
 import { useState } from 'react'
-import { Eye, EyeOff, Lock, LogIn } from 'lucide-react'
+import { Eye, EyeOff, Lock, LogIn, Mail } from 'lucide-react'
 
 export default function Login({ onLogin }) {
+  const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [showPassword, setShowPassword] = useState(false)
   const [loading, setLoading] = useState(false)
@@ -9,14 +10,14 @@ export default function Login({ onLogin }) {
 
   const submit = async (e) => {
     e.preventDefault()
-    if (!password.trim()) {
-      setError('Vui lòng nhập mật khẩu')
+    if (!email.trim() || !password.trim()) {
+      setError('Vui lòng nhập email và mật khẩu')
       return
     }
     setError(null)
     setLoading(true)
     try {
-      await onLogin(password)
+      await onLogin(email.trim(), password)
     } catch (err) {
       setError(err.message || 'Đăng nhập thất bại')
     } finally {
@@ -40,10 +41,29 @@ export default function Login({ onLogin }) {
         <div className="card p-6 shadow-xl">
           <h1 className="text-lg font-semibold text-gray-800 mb-1">Đăng nhập</h1>
           <p className="text-sm text-gray-500 mb-5">
-            Nhập mật khẩu nội bộ để vào hệ thống.
+            Đăng nhập bằng email + mật khẩu của bạn.
           </p>
 
           <form onSubmit={submit} className="space-y-3">
+            <div>
+              <label className="label">Email</label>
+              <div className="relative">
+                <Mail
+                  size={16}
+                  className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none"
+                />
+                <input
+                  type="email"
+                  className="input pl-9"
+                  placeholder="email@hncjsc.vn"
+                  value={email}
+                  onChange={(e) => setEmail(e.target.value)}
+                  autoFocus
+                  autoComplete="username"
+                />
+              </div>
+            </div>
+
             <div>
               <label className="label">Mật khẩu</label>
               <div className="relative">
@@ -57,7 +77,6 @@ export default function Login({ onLogin }) {
                   placeholder="••••••••"
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
-                  autoFocus
                   autoComplete="current-password"
                 />
                 <button
@@ -97,8 +116,7 @@ export default function Login({ onLogin }) {
         </div>
 
         <div className="text-center text-xs text-gray-400 mt-4">
-          Mật khẩu được cấu hình ở <code className="font-mono">BE/.env</code> · biến{' '}
-          <code className="font-mono">AppPassword</code>
+          Quên mật khẩu? Liên hệ Lead để cấp lại.
         </div>
       </div>
     </div>

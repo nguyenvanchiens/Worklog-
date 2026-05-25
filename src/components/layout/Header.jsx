@@ -1,5 +1,5 @@
 import { useLocation } from 'react-router-dom'
-import { Bell, Search, RotateCcw, LogOut } from 'lucide-react'
+import { Bell, Search, RotateCcw, LogOut, ShieldCheck, User } from 'lucide-react'
 import { useApp } from '../../context/AppContext.jsx'
 import { useAuth } from '../../context/AuthContext.jsx'
 import { useConfirm } from '../common/ConfirmProvider.jsx'
@@ -17,19 +17,20 @@ const titleMap = {
 export default function Header() {
   const { pathname } = useLocation()
   const meta = titleMap[pathname] || { title: 'TeamFlow' }
-  const { members, currentUserId, setCurrentUserId, buildRequests, resetDemoData } = useApp()
-  const { logout } = useAuth()
+  const { buildRequests, resetDemoData } = useApp()
+  const { user, isLead, logout } = useAuth()
   const confirm = useConfirm()
+
   const onLogout = async () => {
     const ok = await confirm({
       title: 'Đăng xuất?',
-      message: 'Bạn sẽ phải nhập lại mật khẩu để vào lại hệ thống.',
+      message: 'Bạn sẽ phải đăng nhập lại để vào hệ thống.',
       confirmLabel: 'Đăng xuất',
       tone: 'warning',
     })
     if (ok) logout()
   }
-  const me = members.find((m) => m.id === currentUserId)
+
   const pendingBuilds = buildRequests.filter(
     (b) => b.status === 'pending' || b.status === 'building',
   ).length
@@ -71,23 +72,22 @@ export default function Header() {
       </div>
 
       <div className="flex items-center gap-2 pl-3 border-l border-gray-100">
-        <Avatar member={me} size={32} />
-        <select
-          value={currentUserId}
-          onChange={(e) => setCurrentUserId(e.target.value)}
-          className="text-sm bg-transparent outline-none cursor-pointer"
-          title="Đăng nhập với tư cách..."
-        >
-          {members.map((m) => (
-            <option key={m.id} value={m.id}>
-              {m.name} ({m.role})
-            </option>
-          ))}
-        </select>
+        <Avatar member={user} size={32} />
+        <div className="flex flex-col leading-tight">
+          <span className="text-sm font-medium text-gray-800">{user?.name}</span>
+          <span
+            className={`text-[11px] inline-flex items-center gap-1 ${
+              isLead ? 'text-brand-700' : 'text-gray-500'
+            }`}
+          >
+            {isLead ? <ShieldCheck size={11} /> : <User size={11} />}
+            {isLead ? 'Lead' : 'Staff'} · {user?.role}
+          </span>
+        </div>
         <button
           onClick={onLogout}
           title="Đăng xuất"
-          className="p-2 rounded-lg hover:bg-red-50 text-gray-500 hover:text-red-600"
+          className="p-2 ml-1 rounded-lg hover:bg-red-50 text-gray-500 hover:text-red-600"
         >
           <LogOut size={16} />
         </button>

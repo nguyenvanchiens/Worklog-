@@ -27,6 +27,7 @@ import {
   Filter,
 } from 'lucide-react'
 import { useApp } from '../context/AppContext.jsx'
+import { useAuth } from '../context/AuthContext.jsx'
 import Avatar from '../components/common/Avatar.jsx'
 import Badge from '../components/common/Badge.jsx'
 import Tabs from '../components/common/Tabs.jsx'
@@ -55,7 +56,13 @@ import {
 const TAB_STORAGE_KEY = 'tm_dashboard_tab'
 
 export default function Dashboard() {
-  const { members, projects, tasks, buildRequests, getMember, getProject } = useApp()
+  const { members, projects, tasks, buildRequests, currentUserId, getMember, getProject } = useApp()
+  const { isStaff } = useAuth()
+
+  // Staff: chỉ xem dữ liệu của mình → giới hạn danh sách member trên Dashboard.
+  const visibleMembers = isStaff
+    ? members.filter((m) => m.id === currentUserId)
+    : members
 
   const [activeTab, setActiveTab] = useState(() => {
     return localStorage.getItem(TAB_STORAGE_KEY) || 'actions'
@@ -94,7 +101,7 @@ export default function Dashboard() {
 
   // ============== TEAM STATUS ==============
   const teamStatus = useMemo(() => {
-    return members.map((m) => {
+    return visibleMembers.map((m) => {
       const myTasks = tasks.filter(
         (t) => t.assigneeId === m.id && t.status !== 'done',
       )
@@ -129,7 +136,7 @@ export default function Dashboard() {
         state,
       }
     })
-  }, [members, tasks, buildRequests])
+  }, [visibleMembers, tasks, buildRequests])
 
   // ============== PROJECT HEALTH ==============
   const projectHealth = useMemo(() => {

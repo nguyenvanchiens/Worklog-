@@ -6,6 +6,12 @@ import BuildRequests from './pages/BuildRequests.jsx'
 import BuildHistory from './pages/BuildHistory.jsx'
 import Members from './pages/Members.jsx'
 import Projects from './pages/Projects.jsx'
+import { useAuth } from './context/AuthContext.jsx'
+
+function LeadOnly({ children }) {
+  const { isLead } = useAuth()
+  return isLead ? children : <Navigate to="/" replace />
+}
 
 export default function App() {
   return (
@@ -15,8 +21,8 @@ export default function App() {
         <Route path="/tasks" element={<Tasks />} />
         <Route path="/builds" element={<BuildRequests />} />
         <Route path="/history" element={<BuildHistory />} />
-        <Route path="/members" element={<Members />} />
-        <Route path="/projects" element={<Projects />} />
+        <Route path="/members"  element={<LeadOnly><Members /></LeadOnly>} />
+        <Route path="/projects" element={<LeadOnly><Projects /></LeadOnly>} />
         <Route path="*" element={<Navigate to="/" replace />} />
       </Route>
     </Routes>

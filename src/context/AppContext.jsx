@@ -1,11 +1,12 @@
 import { createContext, useCallback, useContext, useEffect, useState } from 'react'
 import { api, API_BASE } from '../api/client.js'
+import { useAuth } from './AuthContext.jsx'
 
 const AppContext = createContext(null)
 
-const CURRENT_USER_KEY = 'tm_current_user'
-
 export function AppProvider({ children }) {
+  const { user } = useAuth()
+
   const [members, setMembers] = useState([])
   const [projects, setProjects] = useState([])
   const [tasks, setTasks] = useState([])
@@ -15,14 +16,8 @@ export function AppProvider({ children }) {
   const [initialError, setInitialError] = useState(null)
   const [error, setError] = useState(null)
 
-  const [currentUserId, setCurrentUserIdState] = useState(
-    () => localStorage.getItem(CURRENT_USER_KEY) || null,
-  )
-
-  const setCurrentUserId = (id) => {
-    setCurrentUserIdState(id)
-    if (id) localStorage.setItem(CURRENT_USER_KEY, id)
-  }
+  // currentUserId = user đang đăng nhập (lấy từ JWT). Không còn tự chọn nữa.
+  const currentUserId = user?.id ?? null
 
   // Wrap mỗi API call để xử lý error nhất quán
   const handleApi = useCallback(async (operation) => {
@@ -54,14 +49,6 @@ export function AppProvider({ children }) {
       setProjects(p)
       setTasks(t)
       setBuildRequests(b)
-
-      // Mặc định "đăng nhập" bằng Leader nếu chưa chọn user
-      const savedId = localStorage.getItem(CURRENT_USER_KEY)
-      const stillValid = savedId && m.some((x) => x.id === savedId)
-      if (!stillValid && m.length > 0) {
-        const leader = m.find((x) => x.role === 'Leader') || m[0]
-        setCurrentUserId(leader.id)
-      }
     } catch (e) {
       console.error('[INIT]', e)
       setInitialError(e.message || String(e))
@@ -95,6 +82,13 @@ export function AppProvider({ children }) {
       setMembers((list) => list.filter((m) => m.id !== id))
     })
 
+  const setMemberCredentials = (id, payload) =>
+    handleApi(async () => {
+      const updated = await api.put(`/members/${id}/credentials`, payload)
+      setMembers((list) => list.map((m) => (m.id === id ? updated : m)))
+      return updated
+    })
+
   // ===== Projects =====
   const addProject = (p) =>
     handleApi(async () => {
@@ -120,6 +114,14 @@ export function AppProvider({ children }) {
   const updateTask = (id, patch) =>
     handleApi(async () => {
       const updated = await api.put(`/tasks/${id}`, patch)
+      setTasks((list) => list.map((t) => (t.id === id ? updated : t)))
+      return updated
+    })
+
+  /// Staff dùng — chỉ đổi status cho task của mình. BE check assignee.
+  const updateTaskStatus = (id, status) =>
+    handleApi(async () => {
+      const updated = await api.put(`/tasks/${id}/status`, { status })
       setTasks((list) => list.map((t) => (t.id === id ? updated : t)))
       return updated
     })
@@ -188,13 +190,13 @@ export function AppProvider({ children }) {
   const value = {
     // data
     members, projects, tasks, buildRequests,
-    currentUserId, setCurrentUserId,
+    currentUserId,
     // status
     loading, error, initialError,
     // actions
-    addMember, updateMember, removeMember,
+    addMember, updateMember, removeMember, setMemberCredentials,
     addProject, removeProject,
-    addTask, updateTask, removeTask,
+    addTask, updateTask, updateTaskStatus, removeTask,
     requestTaskBuild, cancelTaskBuild, completeTaskBuild,
     addBuildRequest, updateBuildRequest, removeBuildRequest,
     resetDemoData, refreshAll,

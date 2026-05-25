@@ -7,17 +7,21 @@ import {
   History,
   Boxes,
 } from 'lucide-react'
+import { useAuth } from '../../context/AuthContext.jsx'
 
-const items = [
-  { to: '/',          label: 'Tổng quan',     icon: LayoutDashboard },
-  { to: '/tasks',     label: 'Công việc',     icon: ListChecks },
-  { to: '/builds',    label: 'Yêu cầu Build', icon: Rocket },
-  { to: '/history',   label: 'Lịch sử Build', icon: History },
-  { to: '/members',   label: 'Thành viên',    icon: Users },
-  { to: '/projects',  label: 'Dự án',         icon: Boxes },
+const allItems = [
+  { to: '/',          label: 'Tổng quan',     icon: LayoutDashboard, leadOnly: false },
+  { to: '/tasks',     label: 'Công việc',     icon: ListChecks,      leadOnly: false },
+  { to: '/builds',    label: 'Yêu cầu Build', icon: Rocket,          leadOnly: false },
+  { to: '/history',   label: 'Lịch sử Build', icon: History,         leadOnly: false },
+  { to: '/members',   label: 'Thành viên',    icon: Users,           leadOnly: true  },
+  { to: '/projects',  label: 'Dự án',         icon: Boxes,           leadOnly: true  },
 ]
 
 export default function Sidebar() {
+  const { isLead } = useAuth()
+  const items = allItems.filter((i) => !i.leadOnly || isLead)
+
   return (
     <aside className="w-64 shrink-0 bg-white border-r border-gray-100 h-screen sticky top-0 flex flex-col">
       <div className="px-5 py-5 border-b border-gray-100 flex items-center gap-2">
@@ -49,7 +53,7 @@ export default function Sidebar() {
         ))}
       </nav>
       <div className="p-4 text-xs text-gray-400 border-t border-gray-100">
-        v0.1.0 · FE only · Mock data
+        v0.2.0 · TeamFlow
       </div>
     </aside>
   )

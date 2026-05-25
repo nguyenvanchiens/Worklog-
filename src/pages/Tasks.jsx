@@ -1,6 +1,7 @@
 import { useMemo, useState } from 'react'
 import { Plus, Pencil, Trash2, Filter, Timer, ExternalLink, Link as LinkIcon, CalendarClock } from 'lucide-react'
 import { useApp } from '../context/AppContext.jsx'
+import { useAuth } from '../context/AuthContext.jsx'
 import {
   TASK_STATUS_LABEL,
   PRIORITY_LABEL,
@@ -22,6 +23,8 @@ import {
 } from '../utils/format.js'
 
 const STATUS_OPTIONS = ['todo', 'in_progress', 'review', 'waiting_build', 'done']
+// Status staff được tự chuyển (không tự đẩy thẳng vào waiting_build — phải qua "Yêu cầu build")
+const STAFF_STATUS_OPTIONS = ['todo', 'in_progress', 'review', 'done']
 const PRIORITY_OPTIONS = ['low', 'medium', 'high', 'urgent']
 
 const emptyForm = {
@@ -42,10 +45,12 @@ export default function Tasks() {
     projects,
     addTask,
     updateTask,
+    updateTaskStatus,
     removeTask,
     getMember,
     getProject,
   } = useApp()
+  const { isLead, isStaff } = useAuth()
 
   const confirm = useConfirm()
   const [filter, setFilter] = useState({ assigneeId: '', status: '', projectId: '' })
@@ -116,25 +121,33 @@ export default function Tasks() {
     if (ok) removeTask(t.id)
   }
 
+  const onStaffChangeStatus = (t, newStatus) => {
+    if (newStatus === t.status) return
+    updateTaskStatus(t.id, newStatus)
+  }
+
   return (
     <div className="space-y-4">
       <div className="card p-4 flex flex-wrap items-end gap-3">
         <div className="flex items-center gap-2 text-sm font-medium text-gray-600">
           <Filter size={16} /> Lọc:
         </div>
-        <div>
-          <label className="label">Thành viên</label>
-          <select
-            className="input w-44"
-            value={filter.assigneeId}
-            onChange={(e) => setFilter((f) => ({ ...f, assigneeId: e.target.value }))}
-          >
-            <option value="">Tất cả</option>
-            {members.map((m) => (
-              <option key={m.id} value={m.id}>{m.name}</option>
-            ))}
-          </select>
-        </div>
+        {/* Staff chỉ xem task của mình → ẩn filter thành viên */}
+        {isLead && (
+          <div>
+            <label className="label">Thành viên</label>
+            <select
+              className="input w-44"
+              value={filter.assigneeId}
+              onChange={(e) => setFilter((f) => ({ ...f, assigneeId: e.target.value }))}
+            >
+              <option value="">Tất cả</option>
+              {members.map((m) => (
+                <option key={m.id} value={m.id}>{m.name}</option>
+              ))}
+            </select>
+          </div>
+        )}
         <div>
           <label className="label">Trạng thái</label>
           <select
@@ -161,11 +174,13 @@ export default function Tasks() {
             ))}
           </select>
         </div>
-        <div className="ml-auto">
-          <button className="btn-primary" onClick={openAdd}>
-            <Plus size={16} /> Thêm task
-          </button>
-        </div>
+        {isLead && (
+          <div className="ml-auto">
+            <button className="btn-primary" onClick={openAdd}>
+              <Plus size={16} /> Thêm task
+            </button>
+          </div>
+        )}
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-5 gap-4">
@@ -213,20 +228,6 @@ export default function Tasks() {
                           {t.title}
                         </div>
                       )}
-                      <div className="flex gap-1 opacity-0 group-hover:opacity-100">
-                        <button
-                          onClick={() => openEdit(t)}
-                          className="p-1 rounded hover:bg-gray-100 text-gray-500"
-                        >
-                          <Pencil size={12} />
-                        </button>
-                        <button
-                          onClick={() => onDelete(t)}
-                          className="p-1 rounded hover:bg-red-50 text-red-500"
-                        >
-                          <Trash2 size={12} />
-                        </button>
-                      </div>
                     </div>
                     {t.description && (
                       <div className="text-xs text-gray-500 mt-1 line-clamp-2">
@@ -266,20 +267,45 @@ export default function Tasks() {
                         </span>
                       )}
                     </div>
-                    <div className="mt-2 flex gap-1">
-                      <button
-                        onClick={() => openEdit(t)}
-                        className="flex-1 text-xs py-1 rounded bg-gray-50 hover:bg-gray-100 text-gray-600"
-                      >
-                        Sửa
-                      </button>
-                      <button
-                        onClick={() => onDelete(t)}
-                        className="text-xs py-1 px-2 rounded bg-red-50 hover:bg-red-100 text-red-600"
-                      >
-                        Xoá
-                      </button>
-                    </div>
+
+                    {/* Action row: lead có Sửa/Xoá; staff có dropdown đổi status */}
+                    {isLead ? (
+                      <div className="mt-2 flex gap-1">
+                        <button
+                          onClick={() => openEdit(t)}
+                          className="flex-1 text-xs py-1 rounded bg-gray-50 hover:bg-gray-100 text-gray-600 inline-flex items-center justify-center gap-1"
+                        >
+                          <Pencil size={11} /> Sửa
+                        </button>
+                        <button
+                          onClick={() => onDelete(t)}
+                          className="text-xs py-1 px-2 rounded bg-red-50 hover:bg-red-100 text-red-600"
+                          title="Xoá"
+                        >
+                          <Trash2 size={11} />
+                        </button>
+                      </div>
+                    ) : (
+                      // Staff: chỉ đổi status (không đẩy thẳng vào waiting_build).
+                      // Nếu task đang waiting_build, hiển thị badge thay vì dropdown.
+                      t.status === 'waiting_build' ? (
+                        <div className="mt-2 text-[11px] text-gray-500 italic">
+                          Đang chờ Lead duyệt build — không đổi được status.
+                        </div>
+                      ) : (
+                        <div className="mt-2">
+                          <select
+                            className="input w-full text-xs h-8 py-0"
+                            value={t.status}
+                            onChange={(e) => onStaffChangeStatus(t, e.target.value)}
+                          >
+                            {STAFF_STATUS_OPTIONS.map((s) => (
+                              <option key={s} value={s}>{TASK_STATUS_LABEL[s]}</option>
+                            ))}
+                          </select>
+                        </div>
+                      )
+                    )}
                   </div>
                 )
               })}
@@ -288,122 +314,124 @@ export default function Tasks() {
         ))}
       </div>
 
-      <Modal
-        open={modalOpen}
-        onClose={() => setModalOpen(false)}
-        title={editing ? 'Sửa task' : 'Thêm task mới'}
-        size="lg"
-        footer={
-          <>
-            <button className="btn-secondary" onClick={() => setModalOpen(false)}>
-              Huỷ
-            </button>
-            <button className="btn-primary" onClick={onSubmit}>
-              {editing ? 'Cập nhật' : 'Tạo task'}
-            </button>
-          </>
-        }
-      >
-        <form onSubmit={onSubmit} className="space-y-3">
-          <div>
-            <label className="label">Tiêu đề</label>
-            <input
-              className="input"
-              value={form.title}
-              onChange={(e) =>
-                setForm((f) => {
-                  const title = e.target.value
-                  return {
-                    ...f,
-                    title,
-                    link: isAutoJiraLink(f.link) ? deriveJiraLink(title) : f.link,
-                  }
-                })
-              }
-              placeholder="VD: HNCW-348 [Vận hành] Tích hợp API thanh toán"
-              autoFocus
-            />
-          </div>
-          <div>
-            <label className="label">Mô tả</label>
-            <textarea
-              className="input"
-              rows={3}
-              value={form.description}
-              onChange={(e) => setForm((f) => ({ ...f, description: e.target.value }))}
-            />
-          </div>
-          <div>
-            <label className="label flex items-center gap-1">
-              <LinkIcon size={11} /> Link Jira / task tracker (tuỳ chọn)
-            </label>
-            <input
-              className="input"
-              type="url"
-              placeholder="https://issue.fastlink.vn/browse/HNCW-348"
-              value={form.link}
-              onChange={(e) => setForm((f) => ({ ...f, link: e.target.value }))}
-            />
-            <div className="text-[11px] text-gray-500 mt-1">
-              Tự sinh khi tiêu đề có mã ticket (HNCW-348, SMT-35...). Bạn có thể sửa lại nếu cần.
-            </div>
-          </div>
-          <div className="grid grid-cols-2 gap-3">
+      {isLead && (
+        <Modal
+          open={modalOpen}
+          onClose={() => setModalOpen(false)}
+          title={editing ? 'Sửa task' : 'Thêm task mới'}
+          size="lg"
+          footer={
+            <>
+              <button className="btn-secondary" onClick={() => setModalOpen(false)}>
+                Huỷ
+              </button>
+              <button className="btn-primary" onClick={onSubmit}>
+                {editing ? 'Cập nhật' : 'Tạo task'}
+              </button>
+            </>
+          }
+        >
+          <form onSubmit={onSubmit} className="space-y-3">
             <div>
-              <label className="label">Người làm</label>
-              <select
-                className="input"
-                value={form.assigneeId}
-                onChange={(e) => setForm((f) => ({ ...f, assigneeId: e.target.value }))}
-              >
-                {members.map((m) => (
-                  <option key={m.id} value={m.id}>{m.name}</option>
-                ))}
-              </select>
-            </div>
-            <div>
-              <label className="label">Dự án</label>
-              <ProjectCombobox
-                value={form.projectId}
-                onChange={(id) => setForm((f) => ({ ...f, projectId: id }))}
-              />
-            </div>
-            <div>
-              <label className="label">Trạng thái</label>
-              <select
-                className="input"
-                value={form.status}
-                onChange={(e) => setForm((f) => ({ ...f, status: e.target.value }))}
-              >
-                {STATUS_OPTIONS.map((s) => (
-                  <option key={s} value={s}>{TASK_STATUS_LABEL[s]}</option>
-                ))}
-              </select>
-            </div>
-            <div>
-              <label className="label">Ưu tiên</label>
-              <select
-                className="input"
-                value={form.priority}
-                onChange={(e) => setForm((f) => ({ ...f, priority: e.target.value }))}
-              >
-                {PRIORITY_OPTIONS.map((p) => (
-                  <option key={p} value={p}>{PRIORITY_LABEL[p]}</option>
-                ))}
-              </select>
-            </div>
-            <div className="col-span-2">
-              <label className="label">Hạn hoàn thành</label>
+              <label className="label">Tiêu đề</label>
               <input
-                type="date"
                 className="input"
-                value={form.dueDate}
-                onChange={(e) => setForm((f) => ({ ...f, dueDate: e.target.value }))}
+                value={form.title}
+                onChange={(e) =>
+                  setForm((f) => {
+                    const title = e.target.value
+                    return {
+                      ...f,
+                      title,
+                      link: isAutoJiraLink(f.link) ? deriveJiraLink(title) : f.link,
+                    }
+                  })
+                }
+                placeholder="VD: HNCW-348 [Vận hành] Tích hợp API thanh toán"
+                autoFocus
               />
             </div>
-          </div>
-        </form>
-      </Modal>
+            <div>
+              <label className="label">Mô tả</label>
+              <textarea
+                className="input"
+                rows={3}
+                value={form.description}
+                onChange={(e) => setForm((f) => ({ ...f, description: e.target.value }))}
+              />
+            </div>
+            <div>
+              <label className="label flex items-center gap-1">
+                <LinkIcon size={11} /> Link Jira / task tracker (tuỳ chọn)
+              </label>
+              <input
+                className="input"
+                type="url"
+                placeholder="https://issue.fastlink.vn/browse/HNCW-348"
+                value={form.link}
+                onChange={(e) => setForm((f) => ({ ...f, link: e.target.value }))}
+              />
+              <div className="text-[11px] text-gray-500 mt-1">
+                Tự sinh khi tiêu đề có mã ticket (HNCW-348, SMT-35...). Bạn có thể sửa lại nếu cần.
+              </div>
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label className="label">Người làm</label>
+                <select
+                  className="input"
+                  value={form.assigneeId}
+                  onChange={(e) => setForm((f) => ({ ...f, assigneeId: e.target.value }))}
+                >
+                  {members.map((m) => (
+                    <option key={m.id} value={m.id}>{m.name}</option>
+                  ))}
+                </select>
+              </div>
+              <div>
+                <label className="label">Dự án</label>
+                <ProjectCombobox
+                  value={form.projectId}
+                  onChange={(id) => setForm((f) => ({ ...f, projectId: id }))}
+                />
+              </div>
+              <div>
+                <label className="label">Trạng thái</label>
+                <select
+                  className="input"
+                  value={form.status}
+                  onChange={(e) => setForm((f) => ({ ...f, status: e.target.value }))}
+                >
+                  {STATUS_OPTIONS.map((s) => (
+                    <option key={s} value={s}>{TASK_STATUS_LABEL[s]}</option>
+                  ))}
+                </select>
+              </div>
+              <div>
+                <label className="label">Ưu tiên</label>
+                <select
+                  className="input"
+                  value={form.priority}
+                  onChange={(e) => setForm((f) => ({ ...f, priority: e.target.value }))}
+                >
+                  {PRIORITY_OPTIONS.map((p) => (
+                    <option key={p} value={p}>{PRIORITY_LABEL[p]}</option>
+                  ))}
+                </select>
+              </div>
+              <div className="col-span-2">
+                <label className="label">Hạn hoàn thành</label>
+                <input
+                  type="date"
+                  className="input"
+                  value={form.dueDate}
+                  onChange={(e) => setForm((f) => ({ ...f, dueDate: e.target.value }))}
+                />
+              </div>
+            </div>
+          </form>
+        </Modal>
+      )}
     </div>
   )
 }

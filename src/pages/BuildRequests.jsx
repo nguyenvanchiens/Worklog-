@@ -1,6 +1,7 @@
 import { useMemo, useState } from 'react'
 import { Plus, Play, Check, X, Trash2, Rocket } from 'lucide-react'
 import { useApp } from '../context/AppContext.jsx'
+import { useAuth } from '../context/AuthContext.jsx'
 import {
   BUILD_ENV_LABEL,
   BUILD_STATUS_LABEL,
@@ -26,8 +27,8 @@ export default function BuildRequests() {
     removeBuildRequest,
     getMember,
     getProject,
-    members,
   } = useApp()
+  const { user, isLead } = useAuth()
 
   const confirm = useConfirm()
   const [modalOpen, setModalOpen] = useState(false)
@@ -93,9 +94,6 @@ export default function BuildRequests() {
     })
   }
 
-  const me = members.find((m) => m.id === currentUserId)
-  const isLeader = me?.role === 'Leader'
-
   return (
     <div className="space-y-4">
       <div className="card p-4 flex flex-wrap items-end gap-3">
@@ -123,13 +121,19 @@ export default function BuildRequests() {
         <div className="card p-12 text-center text-gray-400">
           <Rocket size={40} className="mx-auto mb-3" />
           <div className="font-medium text-gray-600 mb-1">Không có build chờ xử lý</div>
-          <div className="text-sm">Khi thành viên gửi yêu cầu, nó sẽ xuất hiện ở đây.</div>
+          <div className="text-sm">
+            {isLead
+              ? 'Khi thành viên gửi yêu cầu, nó sẽ xuất hiện ở đây.'
+              : 'Bạn chưa có build nào đang chờ.'}
+          </div>
         </div>
       ) : (
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
           {active.map((b) => {
             const requester = getMember(b.requesterId)
             const project = getProject(b.projectId)
+            // Quyền thao tác: Lead làm hết; staff được thao tác trên build của mình.
+            const canAct = isLead || b.requesterId === currentUserId
             return (
               <div key={b.id} className="card p-5">
                 <div className="flex items-start gap-3">
@@ -165,17 +169,15 @@ export default function BuildRequests() {
                 </div>
 
                 <div className="mt-4 pt-3 border-t border-gray-100 flex flex-wrap gap-2">
-                  {b.status === 'pending' && (
+                  {b.status === 'pending' && canAct && (
                     <button
                       onClick={() => startBuild(b)}
                       className="btn-primary"
-                      disabled={!isLeader}
-                      title={isLeader ? 'Bắt đầu build' : 'Chỉ Leader mới có thể build'}
                     >
                       <Play size={14} /> Bắt đầu build
                     </button>
                   )}
-                  {b.status === 'building' && (
+                  {b.status === 'building' && canAct && (
                     <>
                       <button
                         onClick={() => markSuccess(b)}
@@ -191,13 +193,16 @@ export default function BuildRequests() {
                       </button>
                     </>
                   )}
-                  <button
-                    onClick={() => removeBuildRequest(b.id)}
-                    className="btn-secondary ml-auto"
-                    title="Xoá yêu cầu"
-                  >
-                    <Trash2 size={14} />
-                  </button>
+                  {/* Chỉ Lead mới được xoá yêu cầu */}
+                  {isLead && (
+                    <button
+                      onClick={() => removeBuildRequest(b.id)}
+                      className="btn-secondary ml-auto"
+                      title="Xoá yêu cầu"
+                    >
+                      <Trash2 size={14} />
+                    </button>
+                  )}
                 </div>
               </div>
             )
@@ -258,7 +263,7 @@ export default function BuildRequests() {
             />
           </div>
           <div className="text-xs text-gray-500">
-            Yêu cầu sẽ được gửi với tên: <strong>{me?.name}</strong>
+            Yêu cầu sẽ được gửi với tên: <strong>{user?.name}</strong>
           </div>
         </form>
       </Modal>
