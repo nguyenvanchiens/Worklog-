@@ -57,7 +57,7 @@ const TAB_STORAGE_KEY = 'tm_dashboard_tab'
 
 export default function Dashboard() {
   const { members, projects, tasks, buildRequests, currentUserId, getMember, getProject } = useApp()
-  const { isStaff } = useAuth()
+  const { isStaff, isLead } = useAuth()
 
   // Staff: chỉ xem dữ liệu của mình → giới hạn danh sách member trên Dashboard.
   const visibleMembers = isStaff
@@ -210,6 +210,7 @@ export default function Dashboard() {
     (t) => t.status !== 'done' && isOverdue(t.dueDate),
   ).length
 
+  // Staff: chỉ xem 2 tab đầu — các tab phân tích tổng thể là Lead-only.
   const tabs = [
     {
       id: 'actions',
@@ -225,22 +226,18 @@ export default function Dashboard() {
       badge: overdueCount,
       badgeTone: 'rose',
     },
-    {
-      id: 'projects',
-      label: 'Sức khoẻ dự án',
-      icon: CircleDot,
-    },
-    {
-      id: 'timing',
-      label: 'Thời gian hoàn thành',
-      icon: Timer,
-    },
-    {
-      id: 'activity',
-      label: 'Hoạt động gần đây',
-      icon: Clock,
-    },
+    ...(isLead ? [
+      { id: 'projects', label: 'Sức khoẻ dự án',     icon: CircleDot },
+      { id: 'timing',   label: 'Thời gian hoàn thành', icon: Timer },
+      { id: 'activity', label: 'Hoạt động gần đây',   icon: Clock },
+    ] : []),
   ]
+  // Nếu staff đang ở tab Lead-only (vd save tab cũ từ Lead session) → bật lại tab mặc định.
+  const tabIds = tabs.map((t) => t.id).join(',')
+  useEffect(() => {
+    if (!tabs.some((t) => t.id === activeTab)) setActiveTab('actions')
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [tabIds])
 
   return (
     <div className="space-y-5">
@@ -256,7 +253,7 @@ export default function Dashboard() {
         <MiniStat
           icon={Activity}
           label="Đang hoạt động"
-          value={`${stats.activeMembers}/${members.length}`}
+          value={`${stats.activeMembers}/${visibleMembers.length}`}
           tone="emerald"
           onClick={() => setActiveTab('team')}
         />
@@ -371,13 +368,18 @@ function TeamTab({ teamStatus, getProject }) {
     currentUserId,
     addTask,
     updateTask,
+    updateTaskStatus,
     removeTask,
+    requestTaskDeletion,
+    approveTaskDeletion,
+    cancelTaskDeletion,
     requestTaskBuild,
     cancelTaskBuild,
     completeTaskBuild,
   } = useApp()
-  const currentUser = members.find((m) => m.id === currentUserId)
-  const isLeader = currentUser?.role === 'Leader'
+  const { isLead, isStaff } = useAuth()
+  // "Leader" cũ = role chuyên môn; quyền thao tác giờ dựa vào AccountRole (Lead/Staff).
+  const isLeader = isLead
   const confirm = useConfirm()
 
   const [statusFilter, setStatusFilter] = useState('all')
@@ -420,9 +422,11 @@ function TeamTab({ teamStatus, getProject }) {
               Click "Chờ build" để gửi task lên leader · Leader tick "Đã build" để chuyển sang Lịch sử Build
             </div>
           </div>
-          <Link to="/tasks" className="text-xs text-brand-600 font-medium hover:underline">
-            Xem toàn bộ task →
-          </Link>
+          {isLead && (
+            <Link to="/tasks" className="text-xs text-brand-600 font-medium hover:underline">
+              Xem toàn bộ task →
+            </Link>
+          )}
         </div>
 
         <div className="px-5 py-3 border-b border-gray-100 flex items-center gap-2 flex-wrap">
@@ -457,7 +461,11 @@ function TeamTab({ teamStatus, getProject }) {
                 onToggleStatus={toggleStatus}
                 onAddTask={() => setAddTaskFor(row.member)}
                 onEditTask={(task) => setEditTaskFor(task)}
-                onChangeStatus={(task, status) => updateTask(task.id, { status })}
+                onChangeStatus={(task, status) =>
+                  isStaff
+                    ? updateTaskStatus(task.id, status)
+                    : updateTask(task.id, { status })
+                }
                 onRequestBuild={(task) => setBuildFor(task)}
                 onCompleteBuild={(task) => setCompleteFor(task)}
                 onCancelBuild={async (task) => {
@@ -478,6 +486,33 @@ function TeamTab({ teamStatus, getProject }) {
                     tone: 'danger',
                   })
                   if (ok) removeTask(task.id)
+                }}
+                onRequestDeletion={async (task) => {
+                  const ok = await confirm({
+                    title: 'Xin xoá task',
+                    message: `Gửi yêu cầu xoá task "${task.title}" lên Lead duyệt?\nTask sẽ ở trạng thái chờ duyệt cho đến khi Lead phản hồi.`,
+                    confirmLabel: 'Gửi yêu cầu xoá',
+                    tone: 'warning',
+                  })
+                  if (ok) requestTaskDeletion(task.id)
+                }}
+                onApproveDeletion={async (task) => {
+                  const ok = await confirm({
+                    title: 'Duyệt xoá task',
+                    message: `Đồng ý xoá task "${task.title}"?\nThời gian làm task: vào trạng thái hiện tại ${elapsedFrom(taskStateSince(task))}.\nHành động này không thể hoàn tác.`,
+                    confirmLabel: 'Duyệt + Xoá',
+                    tone: 'danger',
+                  })
+                  if (ok) approveTaskDeletion(task.id)
+                }}
+                onCancelDeletion={async (task) => {
+                  const ok = await confirm({
+                    title: 'Huỷ yêu cầu xoá',
+                    message: `Huỷ yêu cầu xoá task "${task.title}"? Task sẽ tiếp tục được dùng.`,
+                    confirmLabel: 'Huỷ yêu cầu',
+                    tone: 'warning',
+                  })
+                  if (ok) cancelTaskDeletion(task.id)
                 }}
               />
             ))
@@ -852,12 +887,19 @@ function Stat({ label, value, tone = 'gray' }) {
 }
 
 function ActionItem({ action, getMember, getProject }) {
+  const { isLead } = useAuth()
+  // Staff không có quyền vào /tasks /builds → render thẻ div, không phải Link.
+  const Wrap = ({ to, children, ...rest }) =>
+    isLead
+      ? <Link to={to} {...rest}>{children}</Link>
+      : <div {...rest}>{children}</div>
+
   if (action.kind === 'build') {
     const b = action.data
     const member = getMember(b.requesterId)
     const project = getProject(b.projectId)
     return (
-      <Link to="/builds" className="block px-5 py-3 hover:bg-rose-50/40 transition-colors">
+      <Wrap to="/builds" className="block px-5 py-3 hover:bg-rose-50/40 transition-colors">
         <div className="flex items-center gap-3">
           <Avatar member={member} size={36} />
           <div className="flex-1 min-w-0">
@@ -875,14 +917,14 @@ function ActionItem({ action, getMember, getProject }) {
             <Badge tone={b.status}>{BUILD_STATUS_LABEL[b.status]}</Badge>
           </div>
         </div>
-      </Link>
+      </Wrap>
     )
   }
   const t = action.data
   const member = getMember(t.assigneeId)
   const project = getProject(t.projectId)
   return (
-    <Link to="/tasks" className="block px-5 py-3 hover:bg-rose-50/40 transition-colors">
+    <Wrap to="/tasks" className="block px-5 py-3 hover:bg-rose-50/40 transition-colors">
       <div className="flex items-center gap-3">
         <Avatar member={member} size={36} />
         <div className="flex-1 min-w-0">
@@ -900,7 +942,7 @@ function ActionItem({ action, getMember, getProject }) {
           <Badge tone={t.status}>{TASK_STATUS_LABEL[t.status]}</Badge>
         </div>
       </div>
-    </Link>
+    </Wrap>
   )
 }
 
@@ -917,6 +959,9 @@ function MemberRow({
   onCompleteBuild,
   onCancelBuild,
   onDelete,
+  onRequestDeletion,
+  onApproveDeletion,
+  onCancelDeletion,
 }) {
   const { member, activeTasks, counts, myBuilds, state } = row
   const stateLabel = {
@@ -994,13 +1039,22 @@ function MemberRow({
         </div>
 
         {myBuilds.length > 0 && (
-          <Link
-            to="/builds"
-            className="flex items-center gap-1 text-xs font-medium text-rose-700 bg-rose-50 px-2 py-1 rounded-full border border-rose-100 hover:bg-rose-100"
-            title="Build độc lập đang chờ leader"
-          >
-            <Rocket size={12} /> {myBuilds.length}
-          </Link>
+          isLeader ? (
+            <Link
+              to="/builds"
+              className="flex items-center gap-1 text-xs font-medium text-rose-700 bg-rose-50 px-2 py-1 rounded-full border border-rose-100 hover:bg-rose-100"
+              title="Build độc lập đang chờ leader"
+            >
+              <Rocket size={12} /> {myBuilds.length}
+            </Link>
+          ) : (
+            <span
+              className="flex items-center gap-1 text-xs font-medium text-rose-700 bg-rose-50 px-2 py-1 rounded-full border border-rose-100"
+              title="Build của bạn đang chờ leader"
+            >
+              <Rocket size={12} /> {myBuilds.length}
+            </span>
+          )
         )}
 
         <button
@@ -1027,6 +1081,9 @@ function MemberRow({
               onCompleteBuild={() => onCompleteBuild(task)}
               onCancelBuild={() => onCancelBuild(task)}
               onDelete={() => onDelete(task)}
+              onRequestDeletion={() => onRequestDeletion(task)}
+              onApproveDeletion={() => onApproveDeletion(task)}
+              onCancelDeletion={() => onCancelDeletion(task)}
             />
           ))}
         </div>
@@ -1045,9 +1102,15 @@ function TaskRow({
   onCompleteBuild,
   onCancelBuild,
   onDelete,
+  onRequestDeletion,
+  onApproveDeletion,
+  onCancelDeletion,
 }) {
+  const { user } = useAuth()
   const overdue = isOverdue(task.dueDate)
   const isWaitingBuild = task.status === 'waiting_build'
+  const pendingDeletion = !!task.deletionRequestedAt
+  const isMyDeletion = task.deletionRequestedById === user?.id
 
   const stateSince = taskStateSince(task)
   const elapsed = elapsedFrom(stateSince)
@@ -1056,11 +1119,13 @@ function TaskRow({
   return (
     <div
       className={`flex items-center gap-2 text-sm py-1.5 px-2 rounded-md border ${
-        isWaitingBuild
-          ? 'border-orange-200 bg-orange-50/40'
-          : overdue
-            ? 'border-red-100 bg-red-50/30'
-            : 'border-transparent hover:bg-white'
+        pendingDeletion
+          ? 'border-rose-300 bg-rose-50/60'
+          : isWaitingBuild
+            ? 'border-orange-200 bg-orange-50/40'
+            : overdue
+              ? 'border-red-100 bg-red-50/30'
+              : 'border-transparent hover:bg-white'
       }`}
     >
       <span className="text-gray-400 text-xs">→</span>
@@ -1121,7 +1186,40 @@ function TaskRow({
       )}
 
       {/* Action buttons */}
-      {isWaitingBuild ? (
+      {pendingDeletion ? (
+        <div className="flex items-center gap-1">
+          <span className="text-[11px] text-rose-700 font-medium italic mr-1 inline-flex items-center gap-1">
+            <AlertTriangle size={11} /> Chờ Lead duyệt xoá
+          </span>
+          {isLeader && (
+            <>
+              <button
+                onClick={onApproveDeletion}
+                className="flex items-center gap-1 text-xs font-medium text-white bg-rose-600 hover:bg-rose-700 px-2.5 py-1 rounded-md"
+                title="Duyệt yêu cầu xoá — task sẽ bị xoá vĩnh viễn"
+              >
+                <Check size={12} /> Duyệt xoá
+              </button>
+              <button
+                onClick={onCancelDeletion}
+                className="flex items-center gap-1 text-xs font-medium text-gray-600 bg-white hover:bg-gray-100 border border-gray-200 px-2 py-1 rounded-md"
+                title="Từ chối — giữ lại task"
+              >
+                <Undo2 size={12} /> Từ chối
+              </button>
+            </>
+          )}
+          {!isLeader && isMyDeletion && (
+            <button
+              onClick={onCancelDeletion}
+              className="flex items-center gap-1 text-xs font-medium text-gray-600 bg-white hover:bg-gray-100 border border-gray-200 px-2 py-1 rounded-md"
+              title="Huỷ yêu cầu xoá của bạn"
+            >
+              <Undo2 size={12} /> Huỷ xin
+            </button>
+          )}
+        </div>
+      ) : isWaitingBuild ? (
         <div className="flex items-center gap-1">
           {isLeader && (
             <button
@@ -1155,21 +1253,36 @@ function TaskRow({
         </button>
       ) : null}
 
-      <button
-        onClick={onEdit}
-        className="p-1 rounded-md text-gray-400 hover:text-brand-700 hover:bg-brand-50"
-        title="Sửa task (tiêu đề, hạn, ưu tiên...)"
-      >
-        <Pencil size={13} />
-      </button>
+      {/* Edit (Lead-only) + Delete (Lead xoá ngay; Staff xin xoá) — ẩn khi đã có yêu cầu xoá */}
+      {!pendingDeletion && isLeader && (
+        <button
+          onClick={onEdit}
+          className="p-1 rounded-md text-gray-400 hover:text-brand-700 hover:bg-brand-50"
+          title="Sửa task (tiêu đề, hạn, ưu tiên...)"
+        >
+          <Pencil size={13} />
+        </button>
+      )}
 
-      <button
-        onClick={onDelete}
-        className="p-1 rounded-md text-gray-400 hover:text-red-600 hover:bg-red-50"
-        title="Xoá task"
-      >
-        <Trash2 size={13} />
-      </button>
+      {!pendingDeletion && (
+        isLeader ? (
+          <button
+            onClick={onDelete}
+            className="p-1 rounded-md text-gray-400 hover:text-red-600 hover:bg-red-50"
+            title="Xoá task (xoá ngay)"
+          >
+            <Trash2 size={13} />
+          </button>
+        ) : (
+          <button
+            onClick={onRequestDeletion}
+            className="p-1 rounded-md text-gray-400 hover:text-rose-600 hover:bg-rose-50"
+            title="Xin Lead duyệt xoá task này"
+          >
+            <Trash2 size={13} />
+          </button>
+        )
+      )}
     </div>
   )
 }
@@ -1575,8 +1688,12 @@ function CompleteBuildModal({ open, task, onClose, onSubmit }) {
 }
 
 const STATUS_DROPDOWN_OPTIONS = ['todo', 'in_progress', 'review', 'done']
+// Staff không tự đánh dấu "Hoàn thành" — chỉ Lead làm.
+const STATUS_DROPDOWN_OPTIONS_STAFF = ['todo', 'in_progress', 'review']
 
 function StatusDropdown({ task, onChange }) {
+  const { isStaff } = useAuth()
+  const options = isStaff ? STATUS_DROPDOWN_OPTIONS_STAFF : STATUS_DROPDOWN_OPTIONS
   const [open, setOpen] = useState(false)
   const [openUpward, setOpenUpward] = useState(false)
   const ref = useRef(null)
@@ -1636,7 +1753,7 @@ function StatusDropdown({ task, onChange }) {
           <div className="px-3 py-1.5 text-[10px] uppercase font-semibold text-gray-400 border-b border-gray-100">
             Đổi trạng thái
           </div>
-          {STATUS_DROPDOWN_OPTIONS.map((s) => (
+          {options.map((s) => (
             <button
               key={s}
               onClick={() => {

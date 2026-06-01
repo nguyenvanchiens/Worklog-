@@ -9,11 +9,12 @@ import {
 } from 'lucide-react'
 import { useAuth } from '../../context/AuthContext.jsx'
 
+// Staff chỉ sống trên trang Tổng quan — mọi mục khác đều Lead-only.
 const allItems = [
   { to: '/',          label: 'Tổng quan',     icon: LayoutDashboard, leadOnly: false },
-  { to: '/tasks',     label: 'Công việc',     icon: ListChecks,      leadOnly: false },
-  { to: '/builds',    label: 'Yêu cầu Build', icon: Rocket,          leadOnly: false },
-  { to: '/history',   label: 'Lịch sử Build', icon: History,         leadOnly: false },
+  { to: '/tasks',     label: 'Công việc',     icon: ListChecks,      leadOnly: true  },
+  { to: '/builds',    label: 'Yêu cầu Build', icon: Rocket,          leadOnly: true  },
+  { to: '/history',   label: 'Lịch sử Build', icon: History,         leadOnly: true  },
   { to: '/members',   label: 'Thành viên',    icon: Users,           leadOnly: true  },
   { to: '/projects',  label: 'Dự án',         icon: Boxes,           leadOnly: true  },
 ]

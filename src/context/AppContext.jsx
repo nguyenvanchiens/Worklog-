@@ -132,6 +132,29 @@ export function AppProvider({ children }) {
       setTasks((list) => list.filter((t) => t.id !== id))
     })
 
+  /// Staff bấm xoá → task vào trạng thái chờ Lead duyệt.
+  const requestTaskDeletion = (id) =>
+    handleApi(async () => {
+      const updated = await api.post(`/tasks/${id}/request-deletion`, {})
+      setTasks((list) => list.map((t) => (t.id === id ? updated : t)))
+      return updated
+    })
+
+  /// Lead duyệt → thực sự xoá.
+  const approveTaskDeletion = (id) =>
+    handleApi(async () => {
+      await api.post(`/tasks/${id}/approve-deletion`, {})
+      setTasks((list) => list.filter((t) => t.id !== id))
+    })
+
+  /// Huỷ yêu cầu xoá: Lead từ chối, hoặc staff đổi ý.
+  const cancelTaskDeletion = (id) =>
+    handleApi(async () => {
+      const updated = await api.post(`/tasks/${id}/cancel-deletion`, {})
+      setTasks((list) => list.map((t) => (t.id === id ? updated : t)))
+      return updated
+    })
+
   const requestTaskBuild = (taskId, { env, note }) =>
     handleApi(async () => {
       const updated = await api.post(`/tasks/${taskId}/request-build`, { env, note })
@@ -197,6 +220,7 @@ export function AppProvider({ children }) {
     addMember, updateMember, removeMember, setMemberCredentials,
     addProject, removeProject,
     addTask, updateTask, updateTaskStatus, removeTask,
+    requestTaskDeletion, approveTaskDeletion, cancelTaskDeletion,
     requestTaskBuild, cancelTaskBuild, completeTaskBuild,
     addBuildRequest, updateBuildRequest, removeBuildRequest,
     resetDemoData, refreshAll,

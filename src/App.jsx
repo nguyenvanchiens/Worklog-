@@ -18,9 +18,9 @@ export default function App() {
     <Routes>
       <Route element={<Layout />}>
         <Route path="/" element={<Dashboard />} />
-        <Route path="/tasks" element={<Tasks />} />
-        <Route path="/builds" element={<BuildRequests />} />
-        <Route path="/history" element={<BuildHistory />} />
+        <Route path="/tasks"    element={<LeadOnly><Tasks /></LeadOnly>} />
+        <Route path="/builds"   element={<LeadOnly><BuildRequests /></LeadOnly>} />
+        <Route path="/history"  element={<LeadOnly><BuildHistory /></LeadOnly>} />
         <Route path="/members"  element={<LeadOnly><Members /></LeadOnly>} />
         <Route path="/projects" element={<LeadOnly><Projects /></LeadOnly>} />
         <Route path="*" element={<Navigate to="/" replace />} />
