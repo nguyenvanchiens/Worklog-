@@ -25,6 +25,7 @@ import {
   CalendarClock,
   Pencil,
   Filter,
+  Loader2,
 } from 'lucide-react'
 import { useApp } from '../context/AppContext.jsx'
 import { useAuth } from '../context/AuthContext.jsx'
@@ -74,6 +75,7 @@ export default function Dashboard() {
   // ============== ACTION REQUIRED ==============
   const actions = useMemo(() => {
     const items = []
+    // Build request độc lập (từ trang /builds)
     buildRequests
       .filter((b) => b.status === 'pending' || b.status === 'building')
       .forEach((b) =>
@@ -85,6 +87,22 @@ export default function Dashboard() {
           data: b,
         }),
       )
+    // Task đang ở trạng thái chờ build (staff bấm "Chờ build" trên task của mình)
+    tasks
+      .filter((t) => t.status === 'waiting_build')
+      .forEach((t) =>
+        items.push({
+          id: `tb-${t.id}`,
+          kind: 'task_build',
+          // Production = cao hơn dev, urgent priority bump thêm 1
+          urgency:
+            (t.buildEnv === 'production' ? 2 : 1) +
+            (t.priority === 'urgent' ? 1 : 0),
+          createdAt: t.buildRequestedAt || t.statusChangedAt || t.createdAt,
+          data: t,
+        }),
+      )
+    // Task quá hạn
     tasks
       .filter((t) => t.status !== 'done' && isOverdue(t.dueDate))
       .forEach((t) =>
@@ -309,7 +327,25 @@ export default function Dashboard() {
    TABS
    ========================================================= */
 
+const ACTION_FILTER_STORAGE_KEY = 'tm_dashboard_action_filter'
+
 function ActionsTab({ actions, getMember, getProject }) {
+  // Phân nhóm — luôn tính trước, kể cả khi rỗng (để pill count đúng).
+  const getEnv = (a) =>
+    a.kind === 'build' ? a.data.env :
+    a.kind === 'task_build' ? (a.data.buildEnv || 'dev') :
+    null
+  const prodBuilds = actions.filter((a) => a.kind !== 'overdue' && getEnv(a) === 'production')
+  const devBuilds  = actions.filter((a) => a.kind !== 'overdue' && getEnv(a) === 'dev')
+  const overdues   = actions.filter((a) => a.kind === 'overdue')
+
+  const [filter, setFilter] = useState(
+    () => localStorage.getItem(ACTION_FILTER_STORAGE_KEY) || 'all',
+  )
+  useEffect(() => {
+    localStorage.setItem(ACTION_FILTER_STORAGE_KEY, filter)
+  }, [filter])
+
   if (actions.length === 0) {
     return (
       <div className="card p-10 text-center bg-emerald-50/40 border-emerald-100">
@@ -323,23 +359,147 @@ function ActionsTab({ actions, getMember, getProject }) {
       </div>
     )
   }
+
+  const showProd = filter === 'all' || filter === 'prod'
+  const showDev  = filter === 'all' || filter === 'dev'
+  const showOver = filter === 'all' || filter === 'overdue'
+
+  const groups = [
+    { key: 'prod',    title: 'Build PRODUCTION', subtitle: 'Build lên môi trường production — ưu tiên cao nhất', icon: Rocket,         tone: 'rose',  count: prodBuilds.length, items: prodBuilds, show: showProd },
+    { key: 'dev',     title: 'Build DEV',        subtitle: 'Build lên môi trường dev để team test',              icon: Rocket,         tone: 'blue',  count: devBuilds.length,  items: devBuilds,  show: showDev },
+    { key: 'overdue', title: 'Task quá hạn',     subtitle: 'Task đã qua hạn nhưng chưa hoàn thành',              icon: AlertTriangle,  tone: 'amber', count: overdues.length,   items: overdues,   show: showOver },
+  ]
+
+  // Khi filter cụ thể -> chỉ giữ group đó. Khi all -> bỏ qua group rỗng.
+  const visibleGroups = filter === 'all'
+    ? groups.filter((g) => g.count > 0)
+    : groups.filter((g) => g.show)
+
   return (
-    <div className="card border-rose-200 bg-gradient-to-br from-rose-50/60 to-white">
-      <div className="px-5 py-4 border-b border-rose-100 flex items-center gap-2">
-        <div className="w-8 h-8 rounded-lg bg-rose-600 text-white flex items-center justify-center">
-          <Flame size={16} />
+    <div className="space-y-4">
+      {/* Filter pills */}
+      <div className="card p-3 flex items-center gap-2 flex-wrap">
+        <span className="text-xs text-gray-500 mr-1 inline-flex items-center gap-1">
+          <Filter size={12} /> Lọc nhanh:
+        </span>
+        <ActionFilterPill
+          active={filter === 'all'}
+          onClick={() => setFilter('all')}
+          tone="slate"
+          count={actions.length}
+        >
+          Tất cả
+        </ActionFilterPill>
+        <ActionFilterPill
+          active={filter === 'prod'}
+          onClick={() => setFilter('prod')}
+          tone="rose"
+          count={prodBuilds.length}
+          disabled={prodBuilds.length === 0}
+        >
+          Build PRODUCTION
+        </ActionFilterPill>
+        <ActionFilterPill
+          active={filter === 'dev'}
+          onClick={() => setFilter('dev')}
+          tone="blue"
+          count={devBuilds.length}
+          disabled={devBuilds.length === 0}
+        >
+          Build DEV
+        </ActionFilterPill>
+        <ActionFilterPill
+          active={filter === 'overdue'}
+          onClick={() => setFilter('overdue')}
+          tone="amber"
+          count={overdues.length}
+          disabled={overdues.length === 0}
+        >
+          Task quá hạn
+        </ActionFilterPill>
+      </div>
+
+      {visibleGroups.length === 0 ? (
+        <div className="card p-8 text-center text-sm text-gray-500">
+          Không có item nào trong nhóm này.
         </div>
-        <div className="flex-1">
-          <div className="font-semibold text-gray-800 text-sm">
-            {actions.length} việc đang chờ leader
+      ) : (
+        visibleGroups.map((g) => (
+          <ActionGroup
+            key={g.key}
+            title={g.title}
+            subtitle={g.subtitle}
+            icon={g.icon}
+            tone={g.tone}
+            count={g.count}
+            items={g.items}
+            getMember={getMember}
+            getProject={getProject}
+          />
+        ))
+      )}
+    </div>
+  )
+}
+
+const PILL_TONES = {
+  slate: { active: 'bg-gray-800 text-white',  inactive: 'bg-gray-100 text-gray-700 hover:bg-gray-200',     count: 'bg-white/20',          countInactive: 'bg-gray-200 text-gray-600' },
+  rose:  { active: 'bg-rose-600 text-white',  inactive: 'bg-rose-50 text-rose-700 hover:bg-rose-100',      count: 'bg-white/20',          countInactive: 'bg-rose-200 text-rose-700' },
+  blue:  { active: 'bg-blue-600 text-white',  inactive: 'bg-blue-50 text-blue-700 hover:bg-blue-100',      count: 'bg-white/20',          countInactive: 'bg-blue-200 text-blue-700' },
+  amber: { active: 'bg-amber-600 text-white', inactive: 'bg-amber-50 text-amber-700 hover:bg-amber-100',   count: 'bg-white/20',          countInactive: 'bg-amber-200 text-amber-700' },
+}
+
+function ActionFilterPill({ active, onClick, tone, count, disabled, children }) {
+  const t = PILL_TONES[tone] || PILL_TONES.slate
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      disabled={disabled}
+      className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-colors ${
+        disabled
+          ? 'bg-gray-50 text-gray-300 cursor-not-allowed'
+          : active
+            ? t.active
+            : t.inactive
+      }`}
+    >
+      {children}
+      <span className={`px-1.5 py-0.5 rounded text-[10px] font-bold ${
+        disabled ? 'bg-gray-100 text-gray-300' : active ? t.count : t.countInactive
+      }`}>
+        {count}
+      </span>
+    </button>
+  )
+}
+
+const GROUP_TONES = {
+  rose:  { border: 'border-rose-200',  bg: 'from-rose-50/60',  iconBg: 'bg-rose-600',    divide: 'divide-rose-100/60',  badge: 'bg-rose-100 text-rose-700' },
+  blue:  { border: 'border-blue-200',  bg: 'from-blue-50/60',  iconBg: 'bg-blue-600',    divide: 'divide-blue-100/60',  badge: 'bg-blue-100 text-blue-700' },
+  amber: { border: 'border-amber-200', bg: 'from-amber-50/60', iconBg: 'bg-amber-600',   divide: 'divide-amber-100/60', badge: 'bg-amber-100 text-amber-700' },
+}
+
+function ActionGroup({ title, subtitle, icon: Icon, tone, count, items, getMember, getProject }) {
+  const t = GROUP_TONES[tone] || GROUP_TONES.rose
+  return (
+    <div className={`card ${t.border} bg-gradient-to-br ${t.bg} to-white`}>
+      <div className="px-5 py-3 border-b border-gray-100 flex items-center gap-3">
+        <div className={`w-8 h-8 rounded-lg ${t.iconBg} text-white flex items-center justify-center`}>
+          <Icon size={16} />
+        </div>
+        <div className="flex-1 min-w-0">
+          <div className="flex items-center gap-2">
+            <div className="font-semibold text-gray-800 text-sm">{title}</div>
+            <span className={`text-[11px] font-bold px-2 py-0.5 rounded-full ${t.badge}`}>
+              {count}
+            </span>
           </div>
-          <div className="text-xs text-gray-500">
-            Build cần build và task đã quá hạn — sắp theo độ ưu tiên
-          </div>
+          <div className="text-xs text-gray-500">{subtitle}</div>
         </div>
       </div>
-      <div className="divide-y divide-rose-100/60">
-        {actions.map((a) => (
+      <div className={`divide-y ${t.divide}`}>
+        {items.map((a) => (
           <ActionItem
             key={a.id}
             action={a}
@@ -525,9 +685,11 @@ function TeamTab({ teamStatus, getProject }) {
         member={addTaskFor}
         projects={projects}
         onClose={() => setAddTaskFor(null)}
-        onSubmit={(payload) => {
-          addTask(payload)
-          setAddTaskFor(null)
+        onSubmit={async (payload) => {
+          try {
+            await addTask(payload)
+            setAddTaskFor(null)
+          } catch { /* toast lỗi đã hiện */ }
         }}
       />
 
@@ -535,9 +697,11 @@ function TeamTab({ teamStatus, getProject }) {
         open={!!editTaskFor}
         task={editTaskFor}
         onClose={() => setEditTaskFor(null)}
-        onSubmit={(patch) => {
-          updateTask(editTaskFor.id, patch)
-          setEditTaskFor(null)
+        onSubmit={async (patch) => {
+          try {
+            await updateTask(editTaskFor.id, patch)
+            setEditTaskFor(null)
+          } catch { /* toast lỗi đã hiện */ }
         }}
       />
 
@@ -546,9 +710,11 @@ function TeamTab({ teamStatus, getProject }) {
         task={buildFor}
         getProject={getProject}
         onClose={() => setBuildFor(null)}
-        onSubmit={(env, note) => {
-          requestTaskBuild(buildFor.id, { env, note })
-          setBuildFor(null)
+        onSubmit={async (env, note) => {
+          try {
+            await requestTaskBuild(buildFor.id, { env, note })
+            setBuildFor(null)
+          } catch { /* lỗi đã hiển thị qua toast */ }
         }}
       />
 
@@ -556,9 +722,11 @@ function TeamTab({ teamStatus, getProject }) {
         open={!!completeFor}
         task={completeFor}
         onClose={() => setCompleteFor(null)}
-        onSubmit={(version) => {
-          completeTaskBuild(completeFor.id, version)
-          setCompleteFor(null)
+        onSubmit={async (version) => {
+          try {
+            await completeTaskBuild(completeFor.id, version)
+            setCompleteFor(null)
+          } catch { /* lỗi đã hiển thị qua toast */ }
         }}
       />
     </>
@@ -886,60 +1054,250 @@ function Stat({ label, value, tone = 'gray' }) {
   )
 }
 
+// ---- Tone tokens cho ActionItem ----
+const BUILD_ENV_TONE = {
+  production: {
+    strip:  'bg-rose-500',
+    iconBg: 'bg-rose-100 text-rose-700',
+    chip:   'bg-rose-600 text-white',
+    label:  'PRODUCTION',
+  },
+  dev: {
+    strip:  'bg-blue-500',
+    iconBg: 'bg-blue-100 text-blue-700',
+    chip:   'bg-blue-600 text-white',
+    label:  'DEV',
+  },
+}
+
+const PRIORITY_TONE = {
+  urgent: { strip: 'bg-rose-600',   iconBg: 'bg-rose-100 text-rose-700',   chip: 'bg-rose-600 text-white' },
+  high:   { strip: 'bg-rose-500',   iconBg: 'bg-rose-100 text-rose-700',   chip: 'bg-rose-500 text-white' },
+  medium: { strip: 'bg-orange-500', iconBg: 'bg-orange-100 text-orange-700', chip: 'bg-orange-500 text-white' },
+  low:    { strip: 'bg-amber-400',  iconBg: 'bg-amber-100 text-amber-700',  chip: 'bg-amber-400 text-white' },
+}
+
+const BUILD_STATUS_TONE = {
+  pending:  'bg-amber-50 text-amber-700 border border-amber-200',
+  building: 'bg-blue-50 text-blue-700 border border-blue-200 animate-pulse',
+}
+
 function ActionItem({ action, getMember, getProject }) {
   const { isLead } = useAuth()
-  // Staff không có quyền vào /tasks /builds → render thẻ div, không phải Link.
-  const Wrap = ({ to, children, ...rest }) =>
-    isLead
-      ? <Link to={to} {...rest}>{children}</Link>
-      : <div {...rest}>{children}</div>
+  // Outer wrap luôn là div (tránh <a> lồng <a> với task link).
+  // Nút "Mở →" bên phải là link riêng cho Lead.
+  const Wrap = ({ to, children, ...rest }) => <div data-href={to} {...rest}>{children}</div>
+  const OpenBtn = ({ to }) =>
+    isLead ? (
+      <Link
+        to={to}
+        className="shrink-0 text-rose-600 opacity-0 group-hover:opacity-100 transition-opacity text-xs font-semibold inline-flex items-center gap-1 hover:underline"
+      >
+        Mở <ExternalLink size={12} />
+      </Link>
+    ) : null
 
   if (action.kind === 'build') {
     const b = action.data
     const member = getMember(b.requesterId)
     const project = getProject(b.projectId)
+    const tone = BUILD_ENV_TONE[b.env] || BUILD_ENV_TONE.dev
+    const isBuilding = b.status === 'building'
+
     return (
-      <Wrap to="/builds" className="block px-5 py-3 hover:bg-rose-50/40 transition-colors">
-        <div className="flex items-center gap-3">
-          <Avatar member={member} size={36} />
-          <div className="flex-1 min-w-0">
-            <div className="text-sm">
-              <span className="font-semibold text-gray-800">{member?.name}</span>
-              <span className="text-gray-600"> cần build </span>
-              <span className="font-semibold text-gray-800">{project?.name}</span>
+      <Wrap to="/builds" className="block group">
+        <div className="flex items-stretch hover:bg-rose-50/40 transition-colors">
+          {/* Colored strip indicating env */}
+          <div className={`w-1 ${tone.strip} shrink-0`} />
+
+          <div className="flex-1 min-w-0 flex items-center gap-3 px-4 py-3">
+            {/* Type icon with env-colored bg */}
+            <div className={`w-10 h-10 rounded-lg ${tone.iconBg} flex items-center justify-center shrink-0`}>
+              <Rocket size={18} className={isBuilding ? 'animate-pulse' : ''} />
             </div>
-            {b.note && (
-              <div className="text-xs text-gray-500 truncate mt-0.5">{b.note}</div>
-            )}
-          </div>
-          <div className="flex flex-col items-end gap-1 shrink-0">
-            <Badge tone={b.env}>{BUILD_ENV_LABEL[b.env]}</Badge>
-            <Badge tone={b.status}>{BUILD_STATUS_LABEL[b.status]}</Badge>
+
+            <div className="flex-1 min-w-0">
+              {/* Title row */}
+              <div className="flex items-center gap-2 flex-wrap">
+                <span className={`text-[10px] font-bold px-2 py-0.5 rounded ${tone.chip} tracking-wider`}>
+                  {tone.label}
+                </span>
+                <span className="text-sm font-semibold text-gray-800 truncate">
+                  {project?.name}
+                </span>
+                <span className={`text-[11px] font-medium px-2 py-0.5 rounded-full ${BUILD_STATUS_TONE[b.status] || ''}`}>
+                  {BUILD_STATUS_LABEL[b.status]}
+                </span>
+              </div>
+
+              {/* Meta row */}
+              <div className="flex items-center gap-2 text-xs text-gray-500 mt-1 flex-wrap">
+                <span className="inline-flex items-center gap-1">
+                  <Avatar member={member} size={16} />
+                  <span className="font-medium text-gray-700">{member?.name}</span>
+                </span>
+                <span className="text-gray-300">·</span>
+                <span className="inline-flex items-center gap-1">
+                  <Clock size={11} /> yêu cầu {timeFromNow(b.createdAt)}
+                </span>
+              </div>
+
+              {b.note && (
+                <div className="text-xs text-gray-600 mt-1.5 px-2 py-1 bg-gray-50 rounded border border-gray-100 line-clamp-2">
+                  {b.note}
+                </div>
+              )}
+            </div>
+
+            <OpenBtn to="/builds" />
           </div>
         </div>
       </Wrap>
     )
   }
+
+  if (action.kind === 'task_build') {
+    // Task ở trạng thái waiting_build — staff đã bấm "Chờ build"
+    const tk = action.data
+    const member = getMember(tk.assigneeId)
+    const project = getProject(tk.projectId)
+    const env = tk.buildEnv || 'dev'
+    const tone = BUILD_ENV_TONE[env] || BUILD_ENV_TONE.dev
+
+    return (
+      <Wrap to="/tasks" className="block group">
+        <div className="flex items-stretch hover:bg-rose-50/40 transition-colors">
+          <div className={`w-1 ${tone.strip} shrink-0`} />
+
+          <div className="flex-1 min-w-0 flex items-center gap-3 px-4 py-3">
+            <div className={`w-10 h-10 rounded-lg ${tone.iconBg} flex items-center justify-center shrink-0`}>
+              <Rocket size={18} />
+            </div>
+
+            <div className="flex-1 min-w-0">
+              <div className="flex items-center gap-2 flex-wrap">
+                <span className={`text-[10px] font-bold px-2 py-0.5 rounded ${tone.chip} tracking-wider`}>
+                  {tone.label}
+                </span>
+                {tk.link ? (
+                  <a
+                    href={tk.link}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    onClick={(e) => e.stopPropagation()}
+                    className="text-sm font-semibold text-gray-800 truncate hover:text-brand-700 hover:underline inline-flex items-center gap-1"
+                    title={`Mở: ${tk.link}`}
+                  >
+                    {tk.title}
+                    <ExternalLink size={11} className="opacity-60 shrink-0" />
+                  </a>
+                ) : (
+                  <span className="text-sm font-semibold text-gray-800 truncate">{tk.title}</span>
+                )}
+                <span className="text-[11px] font-medium px-2 py-0.5 rounded-full bg-orange-50 text-orange-700 border border-orange-200">
+                  Chờ build
+                </span>
+              </div>
+
+              <div className="flex items-center gap-2 text-xs text-gray-500 mt-1 flex-wrap">
+                <span className="inline-flex items-center gap-1">
+                  <Avatar member={member} size={16} />
+                  <span className="font-medium text-gray-700">{member?.name}</span>
+                </span>
+                {project && (
+                  <>
+                    <span className="text-gray-300">·</span>
+                    <span className="px-1.5 py-0.5 rounded bg-gray-100 text-gray-600 text-[10px] font-medium">
+                      {project.code}
+                    </span>
+                  </>
+                )}
+                <span className="text-gray-300">·</span>
+                <span className="inline-flex items-center gap-1">
+                  <Clock size={11} /> chờ {timeFromNow(tk.buildRequestedAt || tk.statusChangedAt)}
+                </span>
+              </div>
+
+              {tk.buildNote && (
+                <div className="text-xs text-gray-600 mt-1.5 px-2 py-1 bg-gray-50 rounded border border-gray-100 line-clamp-2">
+                  {tk.buildNote}
+                </div>
+              )}
+            </div>
+
+            <OpenBtn to="/tasks" />
+          </div>
+        </div>
+      </Wrap>
+    )
+  }
+
+  // === Overdue task ===
   const t = action.data
   const member = getMember(t.assigneeId)
   const project = getProject(t.projectId)
+  const tone = PRIORITY_TONE[t.priority] || PRIORITY_TONE.medium
+  const overdueDuration = timeFromNow(t.dueDate) // "X ngày trước"
+
   return (
-    <Wrap to="/tasks" className="block px-5 py-3 hover:bg-rose-50/40 transition-colors">
-      <div className="flex items-center gap-3">
-        <Avatar member={member} size={36} />
-        <div className="flex-1 min-w-0">
-          <div className="text-sm">
-            <span className="font-semibold text-gray-800">{member?.name}</span>
-            <span className="text-gray-600"> có task quá hạn: </span>
-            <span className="font-semibold text-gray-800">{t.title}</span>
+    <Wrap to="/tasks" className="block group">
+      <div className="flex items-stretch hover:bg-rose-50/40 transition-colors">
+        {/* Colored strip indicating priority */}
+        <div className={`w-1 ${tone.strip} shrink-0`} />
+
+        <div className="flex-1 min-w-0 flex items-center gap-3 px-4 py-3">
+          {/* Warning icon with priority-colored bg */}
+          <div className={`w-10 h-10 rounded-lg ${tone.iconBg} flex items-center justify-center shrink-0`}>
+            <AlertTriangle size={18} />
           </div>
-          <div className="text-xs text-gray-500 mt-0.5">
-            {project?.name} · Quá hạn {timeFromNow(t.dueDate)}
+
+          <div className="flex-1 min-w-0">
+            {/* Title row */}
+            <div className="flex items-center gap-2 flex-wrap">
+              <span className={`text-[10px] font-bold px-2 py-0.5 rounded ${tone.chip} tracking-wider uppercase`}>
+                {PRIORITY_LABEL[t.priority]}
+              </span>
+              {t.link ? (
+                <a
+                  href={t.link}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  onClick={(e) => e.stopPropagation()}
+                  className="text-sm font-semibold text-gray-800 truncate hover:text-brand-700 hover:underline inline-flex items-center gap-1"
+                  title={`Mở: ${t.link}`}
+                >
+                  {t.title}
+                  <ExternalLink size={11} className="opacity-60 shrink-0" />
+                </a>
+              ) : (
+                <span className="text-sm font-semibold text-gray-800 truncate">{t.title}</span>
+              )}
+            </div>
+
+            {/* Meta row */}
+            <div className="flex items-center gap-2 text-xs mt-1 flex-wrap">
+              <span className="inline-flex items-center gap-1 text-rose-700 font-semibold">
+                <Clock size={11} /> Quá hạn {overdueDuration}
+              </span>
+              <span className="text-gray-300">·</span>
+              <span className="inline-flex items-center gap-1 text-gray-500">
+                <Avatar member={member} size={16} />
+                <span className="font-medium text-gray-700">{member?.name}</span>
+              </span>
+              {project && (
+                <>
+                  <span className="text-gray-300">·</span>
+                  <span className="px-1.5 py-0.5 rounded bg-gray-100 text-gray-600 text-[10px] font-medium">
+                    {project.code}
+                  </span>
+                </>
+              )}
+              <span className="text-gray-300">·</span>
+              <Badge tone={t.status}>{TASK_STATUS_LABEL[t.status]}</Badge>
+            </div>
           </div>
-        </div>
-        <div className="flex flex-col items-end gap-1 shrink-0">
-          <Badge tone={t.priority}>{PRIORITY_LABEL[t.priority]}</Badge>
-          <Badge tone={t.status}>{TASK_STATUS_LABEL[t.status]}</Badge>
+
+          <OpenBtn to="/tasks" />
         </div>
       </div>
     </Wrap>
@@ -1107,10 +1465,12 @@ function TaskRow({
   onCancelDeletion,
 }) {
   const { user } = useAuth()
+  const { isTaskPending } = useApp()
   const overdue = isOverdue(task.dueDate)
   const isWaitingBuild = task.status === 'waiting_build'
   const pendingDeletion = !!task.deletionRequestedAt
   const isMyDeletion = task.deletionRequestedById === user?.id
+  const pending = isTaskPending(task.id)
 
   const stateSince = taskStateSince(task)
   const elapsed = elapsedFrom(stateSince)
@@ -1118,7 +1478,9 @@ function TaskRow({
 
   return (
     <div
-      className={`flex items-center gap-2 text-sm py-1.5 px-2 rounded-md border ${
+      className={`relative flex items-center gap-2 text-sm py-1.5 px-2 rounded-md border transition-opacity ${
+        pending ? 'opacity-60 pointer-events-none' : ''
+      } ${
         pendingDeletion
           ? 'border-rose-300 bg-rose-50/60'
           : isWaitingBuild
@@ -1128,6 +1490,11 @@ function TaskRow({
               : 'border-transparent hover:bg-white'
       }`}
     >
+      {pending && (
+        <span className="absolute right-2 top-1/2 -translate-y-1/2 z-10 inline-flex items-center gap-1 text-xs text-brand-600 font-medium bg-white/95 border border-brand-200 px-2 py-1 rounded-md shadow-sm">
+          <Loader2 size={12} className="animate-spin" /> Đang lưu...
+        </span>
+      )}
       <span className="text-gray-400 text-xs">→</span>
       {task.link ? (
         <a
@@ -1300,6 +1667,7 @@ function AddTaskModal({ open, member, projects, onClose, onSubmit }) {
     priority: 'medium',
     dueDate: '',
   })
+  const [submitting, setSubmitting] = useState(false)
 
   useEffect(() => {
     if (open) {
@@ -1311,6 +1679,7 @@ function AddTaskModal({ open, member, projects, onClose, onSubmit }) {
         priority: 'medium',
         dueDate: '',
       })
+      setSubmitting(false)
     }
     // Chỉ reset khi modal mở lần đầu — không reset khi `projects` thay đổi
     // (combobox có thể tạo project mới giữa chừng)
@@ -1319,30 +1688,41 @@ function AddTaskModal({ open, member, projects, onClose, onSubmit }) {
 
   if (!member) return null
 
-  const submit = (e) => {
-    e.preventDefault()
-    if (!form.title.trim()) return
-    onSubmit({
-      title: form.title.trim(),
-      description: form.description,
-      link: form.link?.trim() || null,
-      assigneeId: member.id,
-      projectId: form.projectId,
-      status: 'todo',
-      priority: form.priority,
-      dueDate: form.dueDate ? new Date(form.dueDate).toISOString() : null,
-    })
+  const submit = async (e) => {
+    e?.preventDefault?.()
+    if (!form.title.trim() || submitting) return
+    setSubmitting(true)
+    try {
+      await onSubmit({
+        title: form.title.trim(),
+        description: form.description,
+        link: form.link?.trim() || null,
+        assigneeId: member.id,
+        projectId: form.projectId,
+        status: 'todo',
+        priority: form.priority,
+        dueDate: form.dueDate ? new Date(form.dueDate).toISOString() : null,
+      })
+    } finally {
+      setSubmitting(false)
+    }
   }
 
   return (
     <Modal
       open={open}
-      onClose={onClose}
+      onClose={submitting ? undefined : onClose}
       title={`Thêm task cho ${member.name}`}
       footer={
         <>
-          <button className="btn-secondary" onClick={onClose}>Huỷ</button>
-          <button className="btn-primary" onClick={submit}>Tạo task</button>
+          <button className="btn-secondary" onClick={onClose} disabled={submitting}>Huỷ</button>
+          <button className="btn-primary" onClick={submit} disabled={submitting}>
+            {submitting ? (
+              <span className="inline-flex items-center gap-1.5">
+                <Loader2 size={14} className="animate-spin" /> Đang tạo...
+              </span>
+            ) : 'Tạo task'}
+          </button>
         </>
       }
     >
@@ -1432,6 +1812,7 @@ function EditTaskModal({ open, task, onClose, onSubmit }) {
     priority: 'medium',
     dueDate: '',
   })
+  const [submitting, setSubmitting] = useState(false)
 
   useEffect(() => {
     if (open && task) {
@@ -1443,33 +1824,45 @@ function EditTaskModal({ open, task, onClose, onSubmit }) {
         priority: task.priority ?? 'medium',
         dueDate: task.dueDate ? task.dueDate.slice(0, 10) : '',
       })
+      setSubmitting(false)
     }
   }, [open, task])
 
   if (!task) return null
 
-  const submit = (e) => {
-    e.preventDefault()
-    if (!form.title.trim()) return
-    onSubmit({
-      title: form.title.trim(),
-      description: form.description,
-      link: form.link?.trim() || null,
-      projectId: form.projectId,
-      priority: form.priority,
-      dueDate: form.dueDate ? new Date(form.dueDate).toISOString() : null,
-    })
+  const submit = async (e) => {
+    e?.preventDefault?.()
+    if (!form.title.trim() || submitting) return
+    setSubmitting(true)
+    try {
+      await onSubmit({
+        title: form.title.trim(),
+        description: form.description,
+        link: form.link?.trim() || null,
+        projectId: form.projectId,
+        priority: form.priority,
+        dueDate: form.dueDate ? new Date(form.dueDate).toISOString() : null,
+      })
+    } finally {
+      setSubmitting(false)
+    }
   }
 
   return (
     <Modal
       open={open}
-      onClose={onClose}
+      onClose={submitting ? undefined : onClose}
       title="Sửa task"
       footer={
         <>
-          <button className="btn-secondary" onClick={onClose}>Huỷ</button>
-          <button className="btn-primary" onClick={submit}>Cập nhật</button>
+          <button className="btn-secondary" onClick={onClose} disabled={submitting}>Huỷ</button>
+          <button className="btn-primary" onClick={submit} disabled={submitting}>
+            {submitting ? (
+              <span className="inline-flex items-center gap-1.5">
+                <Loader2 size={14} className="animate-spin" /> Đang lưu...
+              </span>
+            ) : 'Cập nhật'}
+          </button>
         </>
       }
     >
@@ -1555,27 +1948,47 @@ function EditTaskModal({ open, task, onClose, onSubmit }) {
 function RequestBuildModal({ open, task, getProject, onClose, onSubmit }) {
   const [env, setEnv] = useState('dev')
   const [note, setNote] = useState('')
+  const [submitting, setSubmitting] = useState(false)
 
   useEffect(() => {
     if (open) {
       setEnv('dev')
       setNote('')
+      setSubmitting(false)
     }
   }, [open])
 
   if (!task) return null
   const project = getProject(task.projectId)
 
+  const handleSubmit = async () => {
+    if (submitting) return
+    setSubmitting(true)
+    try {
+      await onSubmit(env, note)
+    } finally {
+      setSubmitting(false)
+    }
+  }
+
   return (
     <Modal
       open={open}
-      onClose={onClose}
+      onClose={submitting ? undefined : onClose}
       title="Gửi yêu cầu build"
       footer={
         <>
-          <button className="btn-secondary" onClick={onClose}>Huỷ</button>
-          <button className="btn-primary" onClick={() => onSubmit(env, note)}>
-            Gửi yêu cầu
+          <button className="btn-secondary" onClick={onClose} disabled={submitting}>Huỷ</button>
+          <button
+            className="btn-primary"
+            onClick={handleSubmit}
+            disabled={submitting}
+          >
+            {submitting ? (
+              <span className="inline-flex items-center gap-1.5">
+                <Loader2 size={14} className="animate-spin" /> Đang gửi...
+              </span>
+            ) : 'Gửi yêu cầu'}
           </button>
         </>
       }
@@ -1624,9 +2037,13 @@ function RequestBuildModal({ open, task, getProject, onClose, onSubmit }) {
 
 function CompleteBuildModal({ open, task, onClose, onSubmit }) {
   const [version, setVersion] = useState('')
+  const [submitting, setSubmitting] = useState(false)
 
   useEffect(() => {
-    if (open) setVersion('')
+    if (open) {
+      setVersion('')
+      setSubmitting(false)
+    }
   }, [open])
 
   if (!task) return null
@@ -1639,19 +2056,36 @@ function CompleteBuildModal({ open, task, onClose, onSubmit }) {
     ? 'Build Dev được ghi vào Lịch sử Build. Task TỰ chuyển sang Chờ build Production để bạn build tiếp.'
     : 'Task sẽ Hoàn thành và xuất hiện trong Lịch sử Build.'
 
+  const handleSubmit = async () => {
+    if (submitting) return
+    setSubmitting(true)
+    try {
+      await onSubmit(version.trim())
+    } finally {
+      setSubmitting(false)
+    }
+  }
+
   return (
     <Modal
       open={open}
-      onClose={onClose}
+      onClose={submitting ? undefined : onClose}
       title={isDev ? 'Đã build Dev — chuẩn bị build Production' : 'Đã build Production — hoàn thành task'}
       footer={
         <>
-          <button className="btn-secondary" onClick={onClose}>Huỷ</button>
+          <button className="btn-secondary" onClick={onClose} disabled={submitting}>Huỷ</button>
           <button
             className="btn-primary bg-emerald-600 hover:bg-emerald-700"
-            onClick={() => onSubmit(version.trim())}
+            onClick={handleSubmit}
+            disabled={submitting}
           >
-            <Check size={14} /> Xác nhận đã build
+            {submitting ? (
+              <span className="inline-flex items-center gap-1.5">
+                <Loader2 size={14} className="animate-spin" /> Đang xử lý...
+              </span>
+            ) : (
+              <><Check size={14} /> Xác nhận đã build</>
+            )}
           </button>
         </>
       }
@@ -1693,7 +2127,11 @@ const STATUS_DROPDOWN_OPTIONS_STAFF = ['todo', 'in_progress', 'review']
 
 function StatusDropdown({ task, onChange }) {
   const { isStaff } = useAuth()
-  const options = isStaff ? STATUS_DROPDOWN_OPTIONS_STAFF : STATUS_DROPDOWN_OPTIONS
+  const baseOptions = isStaff ? STATUS_DROPDOWN_OPTIONS_STAFF : STATUS_DROPDOWN_OPTIONS
+  // Staff: task đã "Đang làm" → không cho quay về "Chưa làm". Lead toàn quyền.
+  const options = (isStaff && task.startedAt)
+    ? baseOptions.filter((s) => s !== 'todo')
+    : baseOptions
   const [open, setOpen] = useState(false)
   const [openUpward, setOpenUpward] = useState(false)
   const ref = useRef(null)

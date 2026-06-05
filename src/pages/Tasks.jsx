@@ -406,6 +406,11 @@ export default function Tasks() {
                     <option key={s} value={s}>{TASK_STATUS_LABEL[s]}</option>
                   ))}
                 </select>
+                {editing?.startedAt && form.status === 'todo' && (
+                  <div className="text-[11px] text-amber-700 mt-1">
+                    Task đã bắt đầu (Đang làm) — chỉ Lead mới chuyển về "Chưa làm" được.
+                  </div>
+                )}
               </div>
               <div>
                 <label className="label">Ưu tiên</label>

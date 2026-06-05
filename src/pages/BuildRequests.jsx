@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react'
-import { Plus, Play, Check, X, Trash2, Rocket } from 'lucide-react'
+import { Plus, Play, Check, X, Trash2, Rocket, Loader2 } from 'lucide-react'
 import { useApp } from '../context/AppContext.jsx'
 import { useAuth } from '../context/AuthContext.jsx'
 import {
@@ -25,6 +25,7 @@ export default function BuildRequests() {
     addBuildRequest,
     updateBuildRequest,
     removeBuildRequest,
+    isBuildPending,
     getMember,
     getProject,
   } = useApp()
@@ -51,16 +52,23 @@ export default function BuildRequests() {
     setModalOpen(true)
   }
 
-  const onSubmit = (e) => {
-    e.preventDefault()
-    if (!form.projectId) return
-    addBuildRequest({
-      projectId: form.projectId,
-      env: form.env,
-      note: form.note,
-      requesterId: currentUserId,
-    })
-    setModalOpen(false)
+  const [submitRequest, setSubmitRequest] = useState(false)
+  const [submitVersionState, setSubmitVersionState] = useState(false)
+
+  const onSubmit = async (e) => {
+    e?.preventDefault?.()
+    if (!form.projectId || submitRequest) return
+    setSubmitRequest(true)
+    try {
+      await addBuildRequest({
+        projectId: form.projectId,
+        env: form.env,
+        note: form.note,
+        requesterId: currentUserId,
+      })
+      setModalOpen(false)
+    } catch { /* toast lỗi đã hiện */ }
+    finally { setSubmitRequest(false) }
   }
 
   const startBuild = (b) => updateBuildRequest(b.id, { status: 'building' })
@@ -70,14 +78,18 @@ export default function BuildRequests() {
     setVersionModal(b)
   }
 
-  const submitVersion = () => {
-    if (!versionModal) return
-    updateBuildRequest(versionModal.id, {
-      status: 'success',
-      completedAt: new Date().toISOString(),
-      version: versionInput.trim() || null,
-    })
-    setVersionModal(null)
+  const submitVersion = async () => {
+    if (!versionModal || submitVersionState) return
+    setSubmitVersionState(true)
+    try {
+      await updateBuildRequest(versionModal.id, {
+        status: 'success',
+        completedAt: new Date().toISOString(),
+        version: versionInput.trim() || null,
+      })
+      setVersionModal(null)
+    } catch { /* toast lỗi đã hiện */ }
+    finally { setSubmitVersionState(false) }
   }
 
   const markFailed = async (b) => {
@@ -134,8 +146,19 @@ export default function BuildRequests() {
             const project = getProject(b.projectId)
             // Quyền thao tác: Lead làm hết; staff được thao tác trên build của mình.
             const canAct = isLead || b.requesterId === currentUserId
+            const pending = isBuildPending(b.id)
             return (
-              <div key={b.id} className="card p-5">
+              <div
+                key={b.id}
+                className={`card p-5 relative transition-opacity ${
+                  pending ? 'opacity-60 pointer-events-none' : ''
+                }`}
+              >
+                {pending && (
+                  <span className="absolute top-3 right-3 inline-flex items-center gap-1 text-xs text-brand-600 font-medium bg-white/95 border border-brand-200 px-2 py-1 rounded-md shadow-sm">
+                    <Loader2 size={12} className="animate-spin" /> Đang lưu...
+                  </span>
+                )}
                 <div className="flex items-start gap-3">
                   <Avatar member={requester} size={44} />
                   <div className="flex-1 min-w-0">
@@ -212,15 +235,19 @@ export default function BuildRequests() {
 
       <Modal
         open={modalOpen}
-        onClose={() => setModalOpen(false)}
+        onClose={submitRequest ? undefined : () => setModalOpen(false)}
         title="Yêu cầu build mới"
         footer={
           <>
-            <button className="btn-secondary" onClick={() => setModalOpen(false)}>
+            <button className="btn-secondary" onClick={() => setModalOpen(false)} disabled={submitRequest}>
               Huỷ
             </button>
-            <button className="btn-primary" onClick={onSubmit}>
-              Gửi yêu cầu
+            <button className="btn-primary" onClick={onSubmit} disabled={submitRequest}>
+              {submitRequest ? (
+                <span className="inline-flex items-center gap-1.5">
+                  <Loader2 size={14} className="animate-spin" /> Đang gửi...
+                </span>
+              ) : 'Gửi yêu cầu'}
             </button>
           </>
         }
@@ -270,19 +297,26 @@ export default function BuildRequests() {
 
       <Modal
         open={!!versionModal}
-        onClose={() => setVersionModal(null)}
+        onClose={submitVersionState ? undefined : () => setVersionModal(null)}
         title="Đánh dấu build thành công"
         size="sm"
         footer={
           <>
-            <button className="btn-secondary" onClick={() => setVersionModal(null)}>
+            <button className="btn-secondary" onClick={() => setVersionModal(null)} disabled={submitVersionState}>
               Huỷ
             </button>
             <button
               className="btn-primary bg-emerald-600 hover:bg-emerald-700"
               onClick={submitVersion}
+              disabled={submitVersionState}
             >
-              <Check size={14} /> Xác nhận
+              {submitVersionState ? (
+                <span className="inline-flex items-center gap-1.5">
+                  <Loader2 size={14} className="animate-spin" /> Đang xác nhận...
+                </span>
+              ) : (
+                <><Check size={14} /> Xác nhận</>
+              )}
             </button>
           </>
         }

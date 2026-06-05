@@ -35,6 +35,30 @@ export function AppProvider({ children }) {
     }
   }, [])
 
+  // ===== Pending state cho từng entity =====
+  // FE đánh dấu task/build đang có action đi BE → UI hiện spinner + disable button.
+  const [pendingTaskIds, setPendingTaskIds] = useState(() => new Set())
+  const [pendingBuildIds, setPendingBuildIds] = useState(() => new Set())
+  const togglePending = (setter) => (id, on) => setter((prev) => {
+    const next = new Set(prev)
+    if (on) next.add(id); else next.delete(id)
+    return next
+  })
+  const markTaskPending  = useCallback(togglePending(setPendingTaskIds), [])
+  const markBuildPending = useCallback(togglePending(setPendingBuildIds), [])
+
+  // Wrap 1 operation theo entity id — set pending true trước, false sau (kể cả lỗi).
+  const withTaskPending = (id, op) => handleApi(async () => {
+    markTaskPending(id, true)
+    try { return await op() }
+    finally { markTaskPending(id, false) }
+  })
+  const withBuildPending = (id, op) => handleApi(async () => {
+    markBuildPending(id, true)
+    try { return await op() }
+    finally { markBuildPending(id, false) }
+  })
+
   const refreshAll = useCallback(async () => {
     setLoading(true)
     setInitialError(null)
@@ -112,7 +136,7 @@ export function AppProvider({ children }) {
     })
 
   const updateTask = (id, patch) =>
-    handleApi(async () => {
+    withTaskPending(id, async () => {
       const updated = await api.put(`/tasks/${id}`, patch)
       setTasks((list) => list.map((t) => (t.id === id ? updated : t)))
       return updated
@@ -120,21 +144,21 @@ export function AppProvider({ children }) {
 
   /// Staff dùng — chỉ đổi status cho task của mình. BE check assignee.
   const updateTaskStatus = (id, status) =>
-    handleApi(async () => {
+    withTaskPending(id, async () => {
       const updated = await api.put(`/tasks/${id}/status`, { status })
       setTasks((list) => list.map((t) => (t.id === id ? updated : t)))
       return updated
     })
 
   const removeTask = (id) =>
-    handleApi(async () => {
+    withTaskPending(id, async () => {
       await api.del(`/tasks/${id}`)
       setTasks((list) => list.filter((t) => t.id !== id))
     })
 
   /// Staff bấm xoá → task vào trạng thái chờ Lead duyệt.
   const requestTaskDeletion = (id) =>
-    handleApi(async () => {
+    withTaskPending(id, async () => {
       const updated = await api.post(`/tasks/${id}/request-deletion`, {})
       setTasks((list) => list.map((t) => (t.id === id ? updated : t)))
       return updated
@@ -142,35 +166,35 @@ export function AppProvider({ children }) {
 
   /// Lead duyệt → thực sự xoá.
   const approveTaskDeletion = (id) =>
-    handleApi(async () => {
+    withTaskPending(id, async () => {
       await api.post(`/tasks/${id}/approve-deletion`, {})
       setTasks((list) => list.filter((t) => t.id !== id))
     })
 
   /// Huỷ yêu cầu xoá: Lead từ chối, hoặc staff đổi ý.
   const cancelTaskDeletion = (id) =>
-    handleApi(async () => {
+    withTaskPending(id, async () => {
       const updated = await api.post(`/tasks/${id}/cancel-deletion`, {})
       setTasks((list) => list.map((t) => (t.id === id ? updated : t)))
       return updated
     })
 
   const requestTaskBuild = (taskId, { env, note }) =>
-    handleApi(async () => {
+    withTaskPending(taskId, async () => {
       const updated = await api.post(`/tasks/${taskId}/request-build`, { env, note })
       setTasks((list) => list.map((t) => (t.id === taskId ? updated : t)))
       return updated
     })
 
   const cancelTaskBuild = (taskId) =>
-    handleApi(async () => {
+    withTaskPending(taskId, async () => {
       const updated = await api.post(`/tasks/${taskId}/cancel-build`, {})
       setTasks((list) => list.map((t) => (t.id === taskId ? updated : t)))
       return updated
     })
 
   const completeTaskBuild = (taskId, version) =>
-    handleApi(async () => {
+    withTaskPending(taskId, async () => {
       const result = await api.post(`/tasks/${taskId}/complete-build`, { version })
       setTasks((list) => list.map((t) => (t.id === taskId ? result.task : t)))
       setBuildRequests((list) => [...list, result.build])
@@ -191,7 +215,7 @@ export function AppProvider({ children }) {
     })
 
   const updateBuildRequest = (id, patch) =>
-    handleApi(async () => {
+    withBuildPending(id, async () => {
       // BE chỉ chấp nhận { status, version? } qua endpoint /status
       const updated = await api.put(`/builds/${id}/status`, {
         status: patch.status,
@@ -202,7 +226,7 @@ export function AppProvider({ children }) {
     })
 
   const removeBuildRequest = (id) =>
-    handleApi(async () => {
+    withBuildPending(id, async () => {
       await api.del(`/builds/${id}`)
       setBuildRequests((list) => list.filter((b) => b.id !== id))
     })
@@ -216,6 +240,9 @@ export function AppProvider({ children }) {
     currentUserId,
     // status
     loading, error, initialError,
+    // pending state (entity đang có action đi BE)
+    isTaskPending: (id) => pendingTaskIds.has(id),
+    isBuildPending: (id) => pendingBuildIds.has(id),
     // actions
     addMember, updateMember, removeMember, setMemberCredentials,
     addProject, removeProject,
