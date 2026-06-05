@@ -1,6 +1,15 @@
 import { useState } from 'react'
 import { Eye, EyeOff, Lock, LogIn, Mail } from 'lucide-react'
 
+const DEFAULT_EMAIL_DOMAIN = '@hncjsc.vn'
+
+/** Nếu user chỉ nhập "chiennv1" → tự thêm @hncjsc.vn. Có "@" rồi thì giữ nguyên. */
+function normalizeEmail(input) {
+  const v = input.trim()
+  if (!v) return ''
+  return v.includes('@') ? v : v + DEFAULT_EMAIL_DOMAIN
+}
+
 export default function Login({ onLogin }) {
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
@@ -10,20 +19,24 @@ export default function Login({ onLogin }) {
 
   const submit = async (e) => {
     e.preventDefault()
-    if (!email.trim() || !password.trim()) {
+    const finalEmail = normalizeEmail(email)
+    if (!finalEmail || !password.trim()) {
       setError('Vui lòng nhập email và mật khẩu')
       return
     }
     setError(null)
     setLoading(true)
     try {
-      await onLogin(email.trim(), password)
+      await onLogin(finalEmail, password)
     } catch (err) {
       setError(err.message || 'Đăng nhập thất bại')
     } finally {
       setLoading(false)
     }
   }
+
+  // Preview email user sẽ gửi đi — hiển thị suffix khi user chưa gõ @
+  const showSuffix = email.trim() && !email.includes('@')
 
   return (
     <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-brand-50 via-white to-brand-100 px-4">
@@ -46,21 +59,26 @@ export default function Login({ onLogin }) {
 
           <form onSubmit={submit} className="space-y-3">
             <div>
-              <label className="label">Email</label>
+              <label className="label">Email hoặc tên đăng nhập</label>
               <div className="relative">
                 <Mail
                   size={16}
                   className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none"
                 />
                 <input
-                  type="email"
+                  type="text"
                   className="input pl-9"
-                  placeholder="email@hncjsc.vn"
+                  placeholder="chiennv1 hoặc email@hncjsc.vn"
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
                   autoFocus
                   autoComplete="username"
                 />
+              </div>
+              <div className="text-[11px] text-gray-500 mt-1 min-h-[14px]">
+                {showSuffix
+                  ? <>Sẽ đăng nhập với: <span className="font-medium text-gray-700">{email.trim()}{DEFAULT_EMAIL_DOMAIN}</span></>
+                  : <>Để trống đuôi sẽ tự thêm <span className="font-mono">{DEFAULT_EMAIL_DOMAIN}</span></>}
               </div>
             </div>
 
