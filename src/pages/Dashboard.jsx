@@ -127,6 +127,7 @@ export default function Dashboard() {
       const review = myTasks.filter((t) => t.status === 'review')
       const todo = myTasks.filter((t) => t.status === 'todo')
       const waitingBuild = myTasks.filter((t) => t.status === 'waiting_build')
+      const testing = myTasks.filter((t) => t.status === 'testing')
       const overdue = myTasks.filter((t) => isOverdue(t.dueDate))
       const myBuilds = buildRequests.filter(
         (b) =>
@@ -137,15 +138,17 @@ export default function Dashboard() {
       let state = 'free'
       if (inProgress.length) state = 'working'
       else if (waitingBuild.length) state = 'waiting_build'
+      else if (testing.length) state = 'testing'
       else if (review.length) state = 'review'
       else if (todo.length) state = 'idle'
 
       return {
         member: m,
-        activeTasks: [...inProgress, ...waitingBuild, ...review, ...todo],
+        activeTasks: [...inProgress, ...waitingBuild, ...testing, ...review, ...todo],
         counts: {
           inProgress: inProgress.length,
           waitingBuild: waitingBuild.length,
+          testing: testing.length,
           review: review.length,
           todo: todo.length,
           overdue: overdue.length,
@@ -516,6 +519,7 @@ const TEAM_FILTER_OPTIONS = [
   { key: 'all',           label: 'Tất cả',     tone: 'slate'  },
   { key: 'in_progress',   label: 'Đang làm',   tone: 'blue'   },
   { key: 'waiting_build', label: 'Chờ build',  tone: 'orange' },
+  { key: 'testing',       label: 'QA test',    tone: 'purple' },
   { key: 'review',        label: 'Đang review', tone: 'amber' },
   { key: 'todo',          label: 'Chưa làm',   tone: 'gray'   },
   { key: 'overdue',       label: 'Quá hạn',    tone: 'red'    },
@@ -1325,6 +1329,7 @@ function MemberRow({
   const stateLabel = {
     working:       { text: 'Đang làm',         dot: 'bg-emerald-500', tone: 'text-emerald-700' },
     waiting_build: { text: 'Đang chờ build',   dot: 'bg-orange-500',  tone: 'text-orange-700' },
+    testing:       { text: 'QA đang test',     dot: 'bg-purple-500',  tone: 'text-purple-700' },
     review:        { text: 'Đang chờ review',  dot: 'bg-amber-500',   tone: 'text-amber-700' },
     idle:          { text: 'Còn task chờ làm', dot: 'bg-gray-400',    tone: 'text-gray-600' },
     free:          { text: 'Rảnh',             dot: 'bg-blue-300',    tone: 'text-blue-600' },
@@ -1369,6 +1374,15 @@ function MemberRow({
               tone="orange"
               active={statusFilter === 'waiting_build'}
               onClick={() => onToggleStatus?.('waiting_build')}
+            />
+          )}
+          {counts.testing > 0 && (
+            <CountChip
+              label="QA test"
+              value={counts.testing}
+              tone="purple"
+              active={statusFilter === 'testing'}
+              onClick={() => onToggleStatus?.('testing')}
             />
           )}
           <CountChip
@@ -1950,12 +1964,16 @@ function RequestBuildModal({ open, task, getProject, onClose, onSubmit }) {
   const [note, setNote] = useState('')
   const [submitting, setSubmitting] = useState(false)
 
+  // Task đang ở "QA test" → bước tiếp theo logic là build Production.
+  const defaultEnv = task?.status === 'testing' ? 'production' : 'dev'
+
   useEffect(() => {
     if (open) {
-      setEnv('dev')
+      setEnv(defaultEnv)
       setNote('')
       setSubmitting(false)
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open])
 
   if (!task) return null
@@ -2121,9 +2139,9 @@ function CompleteBuildModal({ open, task, onClose, onSubmit }) {
   )
 }
 
-const STATUS_DROPDOWN_OPTIONS = ['todo', 'in_progress', 'review', 'done']
+const STATUS_DROPDOWN_OPTIONS = ['todo', 'in_progress', 'review', 'testing', 'done']
 // Staff không tự đánh dấu "Hoàn thành" — chỉ Lead làm.
-const STATUS_DROPDOWN_OPTIONS_STAFF = ['todo', 'in_progress', 'review']
+const STATUS_DROPDOWN_OPTIONS_STAFF = ['todo', 'in_progress', 'review', 'testing']
 
 function StatusDropdown({ task, onChange }) {
   const { isStaff } = useAuth()
@@ -2220,6 +2238,7 @@ function CountChip({ label, value, tone, onClick, active = false }) {
     blue:   'bg-blue-50 text-blue-700',
     amber:  'bg-amber-50 text-amber-700',
     orange: 'bg-orange-50 text-orange-700',
+    purple: 'bg-purple-50 text-purple-700',
     gray:   'bg-gray-100 text-gray-700',
     red:    'bg-red-50 text-red-700',
   }
@@ -2227,6 +2246,7 @@ function CountChip({ label, value, tone, onClick, active = false }) {
     blue:   'bg-blue-600 text-white ring-2 ring-blue-200',
     amber:  'bg-amber-600 text-white ring-2 ring-amber-200',
     orange: 'bg-orange-600 text-white ring-2 ring-orange-200',
+    purple: 'bg-purple-600 text-white ring-2 ring-purple-200',
     gray:   'bg-gray-700 text-white ring-2 ring-gray-200',
     red:    'bg-red-600 text-white ring-2 ring-red-200',
   }
@@ -2265,6 +2285,7 @@ function FilterPill({ active, tone = 'slate', onClick, children }) {
     blue:   'bg-blue-50 text-blue-700 hover:bg-blue-100',
     orange: 'bg-orange-50 text-orange-700 hover:bg-orange-100',
     amber:  'bg-amber-50 text-amber-700 hover:bg-amber-100',
+    purple: 'bg-purple-50 text-purple-700 hover:bg-purple-100',
     gray:   'bg-gray-50 text-gray-600 hover:bg-gray-100',
     red:    'bg-red-50 text-red-700 hover:bg-red-100',
   }
@@ -2273,6 +2294,7 @@ function FilterPill({ active, tone = 'slate', onClick, children }) {
     blue:   'bg-blue-600 text-white',
     orange: 'bg-orange-600 text-white',
     amber:  'bg-amber-600 text-white',
+    purple: 'bg-purple-600 text-white',
     gray:   'bg-gray-700 text-white',
     red:    'bg-red-600 text-white',
   }

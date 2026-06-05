@@ -4,6 +4,7 @@ const PRESETS = {
   in_progress:  { bg: 'bg-blue-50',     text: 'text-blue-700',   dot: 'bg-blue-500'   },
   review:       { bg: 'bg-amber-50',    text: 'text-amber-700',  dot: 'bg-amber-500'  },
   waiting_build:{ bg: 'bg-orange-50',   text: 'text-orange-700', dot: 'bg-orange-500' },
+  testing:      { bg: 'bg-purple-50',   text: 'text-purple-700', dot: 'bg-purple-500' },
   done:         { bg: 'bg-emerald-50',  text: 'text-emerald-700',dot: 'bg-emerald-500'},
 
   // priority

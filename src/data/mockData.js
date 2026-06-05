@@ -7,6 +7,7 @@ export const TASK_STATUS = {
   IN_PROGRESS: 'in_progress',
   REVIEW: 'review',
   WAITING_BUILD: 'waiting_build',
+  TESTING: 'testing',
   DONE: 'done',
 }
 
@@ -15,6 +16,7 @@ export const TASK_STATUS_LABEL = {
   in_progress: 'Đang làm',
   review: 'Đang review',
   waiting_build: 'Chờ build',
+  testing: 'QA đang test',
   done: 'Hoàn thành',
 }
 

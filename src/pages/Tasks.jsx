@@ -22,9 +22,9 @@ import {
   isAutoJiraLink,
 } from '../utils/format.js'
 
-const STATUS_OPTIONS = ['todo', 'in_progress', 'review', 'waiting_build', 'done']
+const STATUS_OPTIONS = ['todo', 'in_progress', 'review', 'waiting_build', 'testing', 'done']
 // Status staff được tự chuyển (không tự đẩy thẳng vào waiting_build — phải qua "Yêu cầu build")
-const STAFF_STATUS_OPTIONS = ['todo', 'in_progress', 'review', 'done']
+const STAFF_STATUS_OPTIONS = ['todo', 'in_progress', 'review', 'testing', 'done']
 const PRIORITY_OPTIONS = ['low', 'medium', 'high', 'urgent']
 
 const emptyForm = {
@@ -68,7 +68,7 @@ export default function Tasks() {
   }, [tasks, filter])
 
   const grouped = useMemo(() => {
-    const map = { todo: [], in_progress: [], review: [], waiting_build: [], done: [] }
+    const map = { todo: [], in_progress: [], review: [], waiting_build: [], testing: [], done: [] }
     filtered.forEach((t) => map[t.status]?.push(t))
     return map
   }, [filtered])
