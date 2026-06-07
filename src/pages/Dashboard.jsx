@@ -26,9 +26,11 @@ import {
   Pencil,
   Filter,
   Loader2,
+  Download,
 } from 'lucide-react'
 import { useApp } from '../context/AppContext.jsx'
 import { useAuth } from '../context/AuthContext.jsx'
+import { downloadFile } from '../api/client.js'
 import Avatar from '../components/common/Avatar.jsx'
 import Badge from '../components/common/Badge.jsx'
 import Tabs from '../components/common/Tabs.jsx'
@@ -71,6 +73,23 @@ export default function Dashboard() {
   useEffect(() => {
     localStorage.setItem(TAB_STORAGE_KEY, activeTab)
   }, [activeTab])
+
+  // ============== EXPORT EXCEL TUẦN ==============
+  const [exportDate, setExportDate] = useState(() => new Date().toISOString().slice(0, 10))
+  const [exporting, setExporting] = useState(false)
+  const [exportError, setExportError] = useState(null)
+
+  async function handleExport() {
+    setExporting(true)
+    setExportError(null)
+    try {
+      await downloadFile(`/export/weekly?date=${exportDate}`, 'BaoCaoTuan.xlsx')
+    } catch (e) {
+      setExportError(e.message || 'Xuất Excel thất bại')
+    } finally {
+      setExporting(false)
+    }
+  }
 
   // ============== ACTION REQUIRED ==============
   const actions = useMemo(() => {
@@ -262,6 +281,36 @@ export default function Dashboard() {
 
   return (
     <div className="space-y-5">
+      {/* EXPORT EXCEL TUẦN — chỉ Lead */}
+      {isLead && (
+        <div className="card p-3 flex items-center gap-3 flex-wrap">
+          <span className="text-sm font-semibold text-gray-700 inline-flex items-center gap-1.5">
+            <Download size={16} className="text-emerald-600" />
+            Báo cáo tuần
+          </span>
+          <span className="text-xs text-gray-500">Chọn 1 ngày trong tuần (T2–T6) cần xuất:</span>
+          <input
+            type="date"
+            value={exportDate}
+            onChange={(e) => setExportDate(e.target.value)}
+            className="border border-gray-200 rounded-lg px-2.5 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-200"
+          />
+          <button
+            onClick={handleExport}
+            disabled={exporting}
+            className="inline-flex items-center gap-1.5 bg-emerald-600 hover:bg-emerald-700 disabled:opacity-60 text-white text-sm font-medium px-3 py-1.5 rounded-lg transition-colors"
+          >
+            {exporting
+              ? <Loader2 size={16} className="animate-spin" />
+              : <Download size={16} />}
+            Xuất Excel tuần
+          </button>
+          {exportError && (
+            <span className="text-xs text-rose-600">{exportError}</span>
+          )}
+        </div>
+      )}
+
       {/* TOP STATS — luôn hiện */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
         <MiniStat

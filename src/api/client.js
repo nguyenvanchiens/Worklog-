@@ -68,4 +68,50 @@ export const api = {
   del: (path, opts) => request('DELETE', path, undefined, opts),
 }
 
+// Tải file nhị phân (vd Excel) kèm Bearer token — api.* ở trên chỉ parse JSON.
+// Ưu tiên tên file từ header Content-Disposition của BE, fallback `fallbackName`.
+export async function downloadFile(path, fallbackName = 'download') {
+  const token = auth.getToken()
+  let res
+  try {
+    res = await fetch(`${BASE}${path}`, {
+      headers: token ? { Authorization: `Bearer ${token}` } : {},
+    })
+  } catch {
+    throw new Error(
+      `Không kết nối được tới BE (${BASE}). Hãy chắc chắn server đang chạy: cd BE && dotnet run`,
+    )
+  }
+
+  if (res.status === 401) {
+    auth.clearToken()
+    onUnauthorized?.()
+    throw new Error('Phiên đăng nhập đã hết hạn. Vui lòng đăng nhập lại.')
+  }
+  if (!res.ok) {
+    let message = res.statusText || `HTTP ${res.status}`
+    try {
+      const errBody = await res.json()
+      message = errBody.message || errBody.title || message
+    } catch {
+      /* body không phải JSON — giữ message mặc định */
+    }
+    throw new Error(message)
+  }
+
+  const disposition = res.headers.get('Content-Disposition') || ''
+  const match = /filename\*?=(?:UTF-8'')?["']?([^"';]+)/i.exec(disposition)
+  const filename = match ? decodeURIComponent(match[1]) : fallbackName
+
+  const blob = await res.blob()
+  const url = URL.createObjectURL(blob)
+  const a = document.createElement('a')
+  a.href = url
+  a.download = filename
+  document.body.appendChild(a)
+  a.click()
+  a.remove()
+  URL.revokeObjectURL(url)
+}
+
 export const API_BASE = BASE
