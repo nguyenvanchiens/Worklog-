@@ -5,7 +5,7 @@ import {
 } from 'lucide-react'
 import { useApp } from '../context/AppContext.jsx'
 import { api } from '../api/client.js'
-import { PRIORITY_LABEL, TASK_STATUS_LABEL } from '../data/mockData.js'
+import { PRIORITY_LABEL, TASK_STATUS_LABEL, UNASSIGNED_ID } from '../data/mockData.js'
 import { deriveJiraLink, formatDate } from '../utils/format.js'
 
 const OPEN_KEY = 'tm_chatbot_open'
@@ -23,6 +23,7 @@ const SLASH_COMMANDS = [
   { cmd: '/summary',  label: 'Tóm tắt hôm nay',                hint: 'tổng hợp tình hình team',  template: 'tóm tắt tình hình team hôm nay (số task đang làm, quá hạn, build chờ)', autoSubmit: true },
   { cmd: '/standup',  label: 'Chuẩn bị standup',               hint: 'ai làm gì, ai block ai',   template: 'chuẩn bị nội dung standup sáng mai: ai đang làm gì, ai đang block, ai cần help', autoSubmit: true },
   { cmd: '/create',   label: 'Tạo task...',                    hint: 'điền tiếp tiêu đề',         template: 'tạo task ' },
+  { cmd: '/backlog',  label: 'Thêm tồn đọng...',               hint: 'task chưa gán, để dành sau', template: 'thêm tồn đọng ' },
   { cmd: '/done',     label: 'Đánh dấu xong...',               hint: 'điền tên/mã task',           template: 'đánh dấu ' },
   { cmd: '/assign',   label: 'Đổi assignee...',                hint: 'điền task và người',         template: 'đổi assignee task ' },
   { cmd: '/extend',   label: 'Gia hạn task...',                hint: 'điền task và ngày',         template: 'gia hạn task ' },
@@ -54,6 +55,7 @@ export default function ChatBot() {
         'Chào! Gõ "/" để mở menu lệnh nhanh, hoặc nói tự nhiên:\n' +
         '• Tạo: "tạo task HNCW-348 cho Chiến hạn mai"\n' +
         '• Tạo nhiều: "tạo 3 task FE: sửa header, fix CSS, review PR"\n' +
+        '• Tồn đọng: "thêm tồn đọng SMT-90 cải tiến báo cáo" (chưa gán, để dành)\n' +
         '• Cập nhật: "đánh dấu HNCW-348 xong", "gia hạn task X đến 25/5"\n' +
         '• Hỏi: "ai đang quá hạn?", "tóm tắt hôm nay"',
     },
@@ -165,17 +167,22 @@ export default function ChatBot() {
     const { intent, message, tasks, update, answer } = r || {}
     switch (intent) {
       case 'create_task':
-      case 'create_tasks': {
+      case 'create_tasks':
+      case 'create_backlog': {
+        const isBacklog = intent === 'create_backlog'
         const previews = (tasks || [])
-          .map((t) => normalizePreview(t, { members, projects, currentUserId }))
+          .map((t) => normalizePreview(t, { members, projects, currentUserId }, isBacklog))
           .filter(Boolean)
         if (previews.length === 0) {
           pushBot({ kind: 'text', tone: 'error', content: 'AI không trả về task hợp lệ.' })
           break
         }
+        const defaultMsg = isBacklog
+          ? (previews.length > 1 ? `Thêm ${previews.length} task tồn đọng (chưa gán)?` : 'Thêm task tồn đọng (chưa gán)?')
+          : (previews.length > 1 ? `Tạo ${previews.length} task này?` : 'Tạo task này?')
         pushBot({
           kind: previews.length > 1 ? 'create_tasks' : 'create_task',
-          content: message || (previews.length > 1 ? `Tạo ${previews.length} task này?` : 'Tạo task này?'),
+          content: message || defaultMsg,
           previews,
         })
         break
@@ -534,10 +541,15 @@ function PreviewCard({ preview, getMember, getProject }) {
     <div className="p-2.5 rounded-xl border border-brand-200 bg-brand-50/40">
       <div className="font-medium text-sm text-gray-800 mb-1">{preview.title}</div>
       <div className="text-[11px] text-gray-600 space-y-0.5">
-        {member && (
+        {member ? (
           <div className="flex items-center gap-1.5">
             <User size={11} className="text-gray-400" />
             <span>{member.name}</span><span className="text-gray-400">· {member.role}</span>
+          </div>
+        ) : (
+          <div className="flex items-center gap-1.5 text-amber-600">
+            <User size={11} className="text-amber-500" />
+            <span>Chưa gán — tồn đọng</span>
           </div>
         )}
         {project && (
@@ -627,14 +639,15 @@ function UpdatePreview({ update, done, busy, getMember, onConfirm, onCancel }) {
 
 // ============== HELPERS ==============
 
-function normalizePreview(aiResult, { members, projects, currentUserId }) {
+function normalizePreview(aiResult, { members, projects, currentUserId }, forceUnassigned = false) {
   if (!aiResult || !aiResult.title) return null
   const validAssignee = members.some((m) => m.id === aiResult.assigneeId)
   const validProject  = projects.some((p) => p.id === aiResult.projectId)
   return {
     title: aiResult.title,
     link: aiResult.link || deriveJiraLink(aiResult.title) || null,
-    assigneeId: validAssignee ? aiResult.assigneeId : currentUserId,
+    // Tồn đọng → chưa gán cho ai; còn lại default về user hiện tại.
+    assigneeId: forceUnassigned ? UNASSIGNED_ID : (validAssignee ? aiResult.assigneeId : currentUserId),
     projectId: validProject ? aiResult.projectId : projects[0]?.id || '',
     priority: ['low', 'medium', 'high', 'urgent'].includes(aiResult.priority)
       ? aiResult.priority
@@ -650,6 +663,15 @@ function normalizePreview(aiResult, { members, projects, currentUserId }) {
 
 function parseCommand(text, { members, projects, currentUserId }) {
   let working = text.trim()
+
+  // "thêm tồn đọng ..." / "backlog ..." → task chưa gán (tồn đọng).
+  let isBacklog = false
+  const blMatch = working.match(/^(?:thêm\s+)?(?:task\s+)?(?:tồn\s*đọng|backlog)\s*:?\s*/i)
+  if (blMatch) {
+    isBacklog = true
+    working = working.slice(blMatch[0].length).trim()
+  }
+
   working = working.replace(/^(?:tạo\s+)?task\s+/i, '').trim()
 
   const markerRe = /\s+(?=(?:cho|giao\s+cho|hạn|ưu\s+tiên|dự\s+án)\s+)/i
@@ -692,11 +714,13 @@ function parseCommand(text, { members, projects, currentUserId }) {
     dueDate = today.toISOString()
   }
 
-  let assigneeId = currentUserId
-  const asMatch = meta.match(/(?:giao\s+)?cho\s+([\p{L}\s]+?)(?=\s+(?:hạn|ưu\s+tiên|dự\s+án|giao\s+cho)\b|$)/iu)
-  if (asMatch) {
-    const found = findMemberByName(members, asMatch[1].trim())
-    if (found) assigneeId = found.id
+  let assigneeId = isBacklog ? UNASSIGNED_ID : currentUserId
+  if (!isBacklog) {
+    const asMatch = meta.match(/(?:giao\s+)?cho\s+([\p{L}\s]+?)(?=\s+(?:hạn|ưu\s+tiên|dự\s+án|giao\s+cho)\b|$)/iu)
+    if (asMatch) {
+      const found = findMemberByName(members, asMatch[1].trim())
+      if (found) assigneeId = found.id
+    }
   }
 
   let projectId = projects[0]?.id || ''

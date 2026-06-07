@@ -2,6 +2,7 @@ import { Routes, Route, Navigate } from 'react-router-dom'
 import Layout from './components/layout/Layout.jsx'
 import Dashboard from './pages/Dashboard.jsx'
 import Tasks from './pages/Tasks.jsx'
+import Backlog from './pages/Backlog.jsx'
 import BuildRequests from './pages/BuildRequests.jsx'
 import BuildHistory from './pages/BuildHistory.jsx'
 import Members from './pages/Members.jsx'
@@ -19,6 +20,7 @@ export default function App() {
       <Route element={<Layout />}>
         <Route path="/" element={<Dashboard />} />
         <Route path="/tasks"    element={<LeadOnly><Tasks /></LeadOnly>} />
+        <Route path="/backlog"  element={<LeadOnly><Backlog /></LeadOnly>} />
         <Route path="/builds"   element={<LeadOnly><BuildRequests /></LeadOnly>} />
         <Route path="/history"  element={<LeadOnly><BuildHistory /></LeadOnly>} />
         <Route path="/members"  element={<LeadOnly><Members /></LeadOnly>} />

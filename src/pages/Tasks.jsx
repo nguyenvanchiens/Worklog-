@@ -5,6 +5,7 @@ import { useAuth } from '../context/AuthContext.jsx'
 import {
   TASK_STATUS_LABEL,
   PRIORITY_LABEL,
+  UNASSIGNED_ID,
 } from '../data/mockData.js'
 import Badge from '../components/common/Badge.jsx'
 import Avatar from '../components/common/Avatar.jsx'
@@ -77,7 +78,7 @@ export default function Tasks() {
     setEditing(null)
     setForm({
       ...emptyForm,
-      assigneeId: members[0]?.id ?? '',
+      assigneeId: members[0]?.id ?? UNASSIGNED_ID,
       projectId: projects[0]?.id ?? '',
     })
     setModalOpen(true)
@@ -89,7 +90,7 @@ export default function Tasks() {
       title: t.title,
       description: t.description,
       link: t.link ?? '',
-      assigneeId: t.assigneeId,
+      assigneeId: t.assigneeId || UNASSIGNED_ID,
       projectId: t.projectId,
       status: t.status,
       priority: t.priority,
@@ -104,6 +105,7 @@ export default function Tasks() {
     const payload = {
       ...form,
       link: form.link?.trim() || null,
+      assigneeId: form.assigneeId || UNASSIGNED_ID,   // '' → coi như chưa gán
       dueDate: form.dueDate ? new Date(form.dueDate).toISOString() : null,
     }
     if (editing) updateTask(editing.id, payload)
@@ -383,6 +385,7 @@ export default function Tasks() {
                   value={form.assigneeId}
                   onChange={(e) => setForm((f) => ({ ...f, assigneeId: e.target.value }))}
                 >
+                  <option value={UNASSIGNED_ID}>— Chưa gán (tồn đọng) —</option>
                   {members.map((m) => (
                     <option key={m.id} value={m.id}>{m.name}</option>
                   ))}

@@ -3,6 +3,7 @@ import {
   LayoutDashboard,
   Users,
   ListChecks,
+  Inbox,
   Rocket,
   History,
   Boxes,
@@ -13,6 +14,7 @@ import { useAuth } from '../../context/AuthContext.jsx'
 const allItems = [
   { to: '/',          label: 'Tổng quan',     icon: LayoutDashboard, leadOnly: false },
   { to: '/tasks',     label: 'Công việc',     icon: ListChecks,      leadOnly: true  },
+  { to: '/backlog',   label: 'Tồn đọng',      icon: Inbox,           leadOnly: true  },
   { to: '/builds',    label: 'Yêu cầu Build', icon: Rocket,          leadOnly: true  },
   { to: '/history',   label: 'Lịch sử Build', icon: History,         leadOnly: true  },
   { to: '/members',   label: 'Thành viên',    icon: Users,           leadOnly: true  },

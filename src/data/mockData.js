@@ -1,5 +1,8 @@
 // Mock data — sẽ thay bằng API khi BE sẵn sàng.
 
+// Guid rỗng = "chưa gán cho ai". BE coi giá trị này (hoặc null) là task tồn đọng chưa có người làm.
+export const UNASSIGNED_ID = '00000000-0000-0000-0000-000000000000'
+
 export const ROLES = ['Leader', 'Frontend', 'Backend', 'Fullstack', 'Mobile', 'QA', 'DevOps']
 
 export const TASK_STATUS = {
