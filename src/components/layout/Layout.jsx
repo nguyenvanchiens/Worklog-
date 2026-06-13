@@ -2,8 +2,10 @@ import { Outlet } from 'react-router-dom'
 import Sidebar from './Sidebar.jsx'
 import Header from './Header.jsx'
 import ChatBot from '../ChatBot.jsx'
+import { useAuth } from '../../context/AuthContext.jsx'
 
 export default function Layout() {
+  const { isLead } = useAuth()
   return (
     <div className="flex min-h-screen">
       <Sidebar />
@@ -13,7 +15,8 @@ export default function Layout() {
           <Outlet />
         </main>
       </div>
-      <ChatBot />
+      {/* Trợ lý chat chỉ dành cho Lead */}
+      {isLead && <ChatBot />}
     </div>
   )
 }
