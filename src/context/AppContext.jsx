@@ -131,7 +131,13 @@ export function AppProvider({ children }) {
   const addTask = (t) =>
     handleApi(async () => {
       const created = await api.post('/tasks', t)
-      setTasks((list) => [...list, created])
+      // BE có thể "claim" 1 task tồn đọng trùng (trả về task đã có) thay vì tạo mới
+      // → upsert theo id để không nhân đôi trong state.
+      setTasks((list) =>
+        list.some((x) => x.id === created.id)
+          ? list.map((x) => (x.id === created.id ? created : x))
+          : [...list, created],
+      )
       return created
     })
 

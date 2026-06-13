@@ -398,6 +398,39 @@ function ActionsTab({ actions, getMember, getProject }) {
     localStorage.setItem(ACTION_FILTER_STORAGE_KEY, filter)
   }, [filter])
 
+  // ===== Cập nhật trạng thái build ngay tại đây (Lead) =====
+  const { isLead } = useAuth()
+  const { completeTaskBuild, cancelTaskBuild, updateBuildRequest } = useApp()
+  const confirm = useConfirm()
+  const [completeFor, setCompleteFor] = useState(null)
+
+  const handleCancelTask = async (tk) => {
+    const ok = await confirm({
+      title: 'Huỷ chờ build',
+      message: `Huỷ yêu cầu build cho "${tk.title}"? Task sẽ trở lại trạng thái trước đó.`,
+      confirmLabel: 'Huỷ build',
+      tone: 'danger',
+    })
+    if (ok) cancelTaskBuild(tk.id)
+  }
+
+  const handleBuildStatus = async (b, status) => {
+    if (status === 'failed') {
+      const ok = await confirm({
+        title: 'Đánh dấu build thất bại',
+        message: 'Xác nhận build này thất bại?',
+        confirmLabel: 'Thất bại',
+        tone: 'danger',
+      })
+      if (!ok) return
+    }
+    updateBuildRequest(b.id, { status })
+  }
+
+  const buildActions = isLead
+    ? { onCompleteTask: setCompleteFor, onCancelTask: handleCancelTask, onBuildStatus: handleBuildStatus }
+    : null
+
   if (actions.length === 0) {
     return (
       <div className="card p-10 text-center bg-emerald-50/40 border-emerald-100">
@@ -487,9 +520,20 @@ function ActionsTab({ actions, getMember, getProject }) {
             items={g.items}
             getMember={getMember}
             getProject={getProject}
+            buildActions={buildActions}
           />
         ))
       )}
+
+      <CompleteBuildModal
+        open={!!completeFor}
+        task={completeFor}
+        onClose={() => setCompleteFor(null)}
+        onSubmit={async (version) => {
+          if (completeFor) await completeTaskBuild(completeFor.id, version)
+          setCompleteFor(null)
+        }}
+      />
     </div>
   )
 }
@@ -532,7 +576,7 @@ const GROUP_TONES = {
   amber: { border: 'border-amber-200', bg: 'from-amber-50/60', iconBg: 'bg-amber-600',   divide: 'divide-amber-100/60', badge: 'bg-amber-100 text-amber-700' },
 }
 
-function ActionGroup({ title, subtitle, icon: Icon, tone, count, items, getMember, getProject }) {
+function ActionGroup({ title, subtitle, icon: Icon, tone, count, items, getMember, getProject, buildActions }) {
   const t = GROUP_TONES[tone] || GROUP_TONES.rose
   return (
     <div className={`card ${t.border} bg-gradient-to-br ${t.bg} to-white`}>
@@ -557,6 +601,7 @@ function ActionGroup({ title, subtitle, icon: Icon, tone, count, items, getMembe
             action={a}
             getMember={getMember}
             getProject={getProject}
+            buildActions={buildActions}
           />
         ))}
       </div>
@@ -1135,7 +1180,7 @@ const BUILD_STATUS_TONE = {
   building: 'bg-blue-50 text-blue-700 border border-blue-200 animate-pulse',
 }
 
-function ActionItem({ action, getMember, getProject }) {
+function ActionItem({ action, getMember, getProject, buildActions }) {
   const { isLead } = useAuth()
   // Outer wrap luôn là div (tránh <a> lồng <a> với task link).
   // Nút "Mở →" bên phải là link riêng cho Lead.
@@ -1201,6 +1246,34 @@ function ActionItem({ action, getMember, getProject }) {
                 </div>
               )}
             </div>
+
+            {buildActions && (b.status === 'pending' || b.status === 'building') && (
+              <div className="flex items-center gap-1.5 shrink-0" onClick={(e) => e.stopPropagation()}>
+                {b.status === 'pending' && (
+                  <button
+                    type="button"
+                    onClick={() => buildActions.onBuildStatus(b, 'building')}
+                    className="text-xs px-2 py-1 rounded bg-blue-50 hover:bg-blue-100 text-blue-700 font-medium"
+                  >
+                    Bắt đầu
+                  </button>
+                )}
+                <button
+                  type="button"
+                  onClick={() => buildActions.onBuildStatus(b, 'success')}
+                  className="inline-flex items-center gap-1 text-xs px-2 py-1 rounded bg-emerald-50 hover:bg-emerald-100 text-emerald-700 font-medium"
+                >
+                  <Check size={12} /> Thành công
+                </button>
+                <button
+                  type="button"
+                  onClick={() => buildActions.onBuildStatus(b, 'failed')}
+                  className="text-xs px-2 py-1 rounded bg-red-50 hover:bg-red-100 text-red-600 font-medium"
+                >
+                  Thất bại
+                </button>
+              </div>
+            )}
 
             <OpenBtn to="/builds" />
           </div>
@@ -1277,6 +1350,27 @@ function ActionItem({ action, getMember, getProject }) {
                 </div>
               )}
             </div>
+
+            {buildActions && (
+              <div className="flex items-center gap-1.5 shrink-0" onClick={(e) => e.stopPropagation()}>
+                <button
+                  type="button"
+                  onClick={() => buildActions.onCompleteTask(tk)}
+                  className="inline-flex items-center gap-1 text-xs px-2.5 py-1.5 rounded-md bg-emerald-600 hover:bg-emerald-700 text-white font-medium"
+                  title={env === 'production' ? 'Đã build Production → hoàn thành task' : 'Đã build Dev → chuyển sang chờ build Production'}
+                >
+                  <Check size={13} /> Đã build
+                </button>
+                <button
+                  type="button"
+                  onClick={() => buildActions.onCancelTask(tk)}
+                  className="text-xs px-2 py-1.5 rounded-md bg-gray-100 hover:bg-gray-200 text-gray-600 font-medium"
+                  title="Huỷ chờ build"
+                >
+                  Huỷ
+                </button>
+              </div>
+            )}
 
             <OpenBtn to="/tasks" />
           </div>
