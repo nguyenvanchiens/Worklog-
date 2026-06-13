@@ -73,6 +73,10 @@ export function AuthProvider({ children }) {
     setUserState(null)
   }
 
+  // Tự đổi mật khẩu — cần mật khẩu hiện tại; BE verify rồi mới đổi.
+  const changePassword = (currentPassword, newPassword) =>
+    api.post('/auth/change-password', { currentPassword, newPassword })
+
   if (!token) {
     return <Login onLogin={login} />
   }
@@ -89,7 +93,7 @@ export function AuthProvider({ children }) {
   const isStaff = user?.accountRole === 'Staff'
 
   return (
-    <AuthContext.Provider value={{ token, user, isLead, isStaff, logout }}>
+    <AuthContext.Provider value={{ token, user, isLead, isStaff, logout, changePassword }}>
       {children}
     </AuthContext.Provider>
   )
