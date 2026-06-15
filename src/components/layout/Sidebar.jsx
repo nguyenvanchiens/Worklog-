@@ -7,6 +7,7 @@ import {
   Rocket,
   History,
   Boxes,
+  Settings,
 } from 'lucide-react'
 import { useAuth } from '../../context/AuthContext.jsx'
 
@@ -19,6 +20,7 @@ const allItems = [
   { to: '/history',   label: 'Lịch sử Build', icon: History,         leadOnly: true  },
   { to: '/members',   label: 'Thành viên',    icon: Users,           leadOnly: true  },
   { to: '/projects',  label: 'Dự án',         icon: Boxes,           leadOnly: true  },
+  { to: '/settings',  label: 'Cài đặt',       icon: Settings,        leadOnly: true  },
 ]
 
 export default function Sidebar() {
