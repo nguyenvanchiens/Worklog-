@@ -185,9 +185,16 @@ export function AppProvider({ children }) {
       return updated
     })
 
-  const requestTaskBuild = (taskId, { env, note }) =>
+  const requestTaskBuild = (taskId, { env, note, description }) =>
     withTaskPending(taskId, async () => {
-      const updated = await api.post(`/tasks/${taskId}/request-build`, { env, note })
+      const updated = await api.post(`/tasks/${taskId}/request-build`, { env, note, description })
+      setTasks((list) => list.map((t) => (t.id === taskId ? updated : t)))
+      return updated
+    })
+
+  const updateTaskDescription = (taskId, description) =>
+    withTaskPending(taskId, async () => {
+      const updated = await api.put(`/tasks/${taskId}/description`, { description })
       setTasks((list) => list.map((t) => (t.id === taskId ? updated : t)))
       return updated
     })
@@ -254,7 +261,7 @@ export function AppProvider({ children }) {
     addProject, removeProject,
     addTask, updateTask, updateTaskStatus, removeTask,
     requestTaskDeletion, approveTaskDeletion, cancelTaskDeletion,
-    requestTaskBuild, cancelTaskBuild, completeTaskBuild,
+    requestTaskBuild, cancelTaskBuild, completeTaskBuild, updateTaskDescription,
     addBuildRequest, updateBuildRequest, removeBuildRequest,
     resetDemoData, refreshAll,
     // helpers

@@ -634,6 +634,7 @@ function TeamTab({ teamStatus, getProject }) {
     requestTaskBuild,
     cancelTaskBuild,
     completeTaskBuild,
+    updateTaskDescription,
   } = useApp()
   const { isLead, isStaff } = useAuth()
   // "Leader" cũ = role chuyên môn; quyền thao tác giờ dựa vào AccountRole (Lead/Staff).
@@ -645,6 +646,7 @@ function TeamTab({ teamStatus, getProject }) {
   const [editTaskFor, setEditTaskFor] = useState(null) // task object
   const [buildFor, setBuildFor] = useState(null)     // task object
   const [completeFor, setCompleteFor] = useState(null) // task object
+  const [editDescFor, setEditDescFor] = useState(null) // task object — sửa mô tả khi chờ build
 
   const filteredTeamStatus = useMemo(() => {
     if (statusFilter === 'all') return teamStatus
@@ -726,6 +728,7 @@ function TeamTab({ teamStatus, getProject }) {
                 }
                 onRequestBuild={(task) => setBuildFor(task)}
                 onCompleteBuild={(task) => setCompleteFor(task)}
+                onEditDescription={(task) => setEditDescFor(task)}
                 onCancelBuild={async (task) => {
                   const ok = await confirm({
                     title: 'Huỷ yêu cầu build?',
@@ -808,10 +811,22 @@ function TeamTab({ teamStatus, getProject }) {
         task={buildFor}
         getProject={getProject}
         onClose={() => setBuildFor(null)}
-        onSubmit={async (env, note) => {
+        onSubmit={async (env, note, description) => {
           try {
-            await requestTaskBuild(buildFor.id, { env, note })
+            await requestTaskBuild(buildFor.id, { env, note, description })
             setBuildFor(null)
+          } catch { /* lỗi đã hiển thị qua toast */ }
+        }}
+      />
+
+      <EditDescriptionModal
+        open={!!editDescFor}
+        task={editDescFor}
+        onClose={() => setEditDescFor(null)}
+        onSubmit={async (description) => {
+          try {
+            await updateTaskDescription(editDescFor.id, description)
+            setEditDescFor(null)
           } catch { /* lỗi đã hiển thị qua toast */ }
         }}
       />
@@ -1462,6 +1477,7 @@ function MemberRow({
   onChangeStatus,
   onRequestBuild,
   onCompleteBuild,
+  onEditDescription,
   onCancelBuild,
   onDelete,
   onRequestDeletion,
@@ -1594,6 +1610,7 @@ function MemberRow({
               onChangeStatus={(s) => onChangeStatus(task, s)}
               onRequestBuild={() => onRequestBuild(task)}
               onCompleteBuild={() => onCompleteBuild(task)}
+              onEditDescription={() => onEditDescription(task)}
               onCancelBuild={() => onCancelBuild(task)}
               onDelete={() => onDelete(task)}
               onRequestDeletion={() => onRequestDeletion(task)}
@@ -1615,6 +1632,7 @@ function TaskRow({
   onChangeStatus,
   onRequestBuild,
   onCompleteBuild,
+  onEditDescription,
   onCancelBuild,
   onDelete,
   onRequestDeletion,
@@ -1758,6 +1776,15 @@ function TaskRow({
             <span className="text-[11px] text-orange-600 italic mr-1">
               Đang chờ leader build...
             </span>
+          )}
+          {!isLeader && (
+            <button
+              onClick={onEditDescription}
+              className="flex items-center gap-1 text-xs font-medium text-gray-600 bg-white hover:bg-gray-100 border border-gray-200 px-2 py-1 rounded-md"
+              title="Sửa mô tả task (vẫn giữ trạng thái chờ build)"
+            >
+              <Pencil size={12} /> Sửa mô tả
+            </button>
           )}
           <button
             onClick={onCancelBuild}
@@ -2102,9 +2129,72 @@ function EditTaskModal({ open, task, onClose, onSubmit }) {
   )
 }
 
+function EditDescriptionModal({ open, task, onClose, onSubmit }) {
+  const [description, setDescription] = useState('')
+  const [submitting, setSubmitting] = useState(false)
+
+  useEffect(() => {
+    if (open) {
+      setDescription(task?.description || '')
+      setSubmitting(false)
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open])
+
+  if (!task) return null
+
+  const handleSubmit = async () => {
+    if (submitting) return
+    setSubmitting(true)
+    try {
+      await onSubmit(description)
+    } finally {
+      setSubmitting(false)
+    }
+  }
+
+  return (
+    <Modal
+      open={open}
+      onClose={submitting ? undefined : onClose}
+      title="Sửa mô tả task"
+      footer={
+        <>
+          <button className="btn-secondary" onClick={onClose} disabled={submitting}>Huỷ</button>
+          <button className="btn-primary" onClick={handleSubmit} disabled={submitting}>
+            {submitting ? (
+              <span className="inline-flex items-center gap-1.5">
+                <Loader2 size={14} className="animate-spin" /> Đang lưu...
+              </span>
+            ) : 'Lưu mô tả'}
+          </button>
+        </>
+      }
+    >
+      <div className="space-y-3">
+        <div className="p-3 bg-gray-50 rounded-lg">
+          <div className="text-xs text-gray-500 mb-0.5">Task</div>
+          <div className="font-medium text-gray-800">{task.title}</div>
+        </div>
+        <div>
+          <label className="label">Mô tả task</label>
+          <textarea
+            className="input"
+            rows={4}
+            placeholder="Mô tả nội dung công việc — sẽ hiển thị trong báo cáo và thông báo Telegram."
+            value={description}
+            onChange={(e) => setDescription(e.target.value)}
+          />
+        </div>
+      </div>
+    </Modal>
+  )
+}
+
 function RequestBuildModal({ open, task, getProject, onClose, onSubmit }) {
   const [env, setEnv] = useState('dev')
   const [note, setNote] = useState('')
+  const [description, setDescription] = useState('')
   const [submitting, setSubmitting] = useState(false)
 
   // Task đang ở "QA test" → bước tiếp theo logic là build Production.
@@ -2114,6 +2204,7 @@ function RequestBuildModal({ open, task, getProject, onClose, onSubmit }) {
     if (open) {
       setEnv(defaultEnv)
       setNote('')
+      setDescription(task?.description || '')
       setSubmitting(false)
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -2126,7 +2217,7 @@ function RequestBuildModal({ open, task, getProject, onClose, onSubmit }) {
     if (submitting) return
     setSubmitting(true)
     try {
-      await onSubmit(env, note)
+      await onSubmit(env, note, description)
     } finally {
       setSubmitting(false)
     }
@@ -2180,6 +2271,16 @@ function RequestBuildModal({ open, task, getProject, onClose, onSubmit }) {
               </button>
             ))}
           </div>
+        </div>
+        <div>
+          <label className="label">Mô tả task (có thể cập nhật)</label>
+          <textarea
+            className="input"
+            rows={3}
+            placeholder="Mô tả nội dung công việc — sẽ hiển thị trong báo cáo và thông báo Telegram."
+            value={description}
+            onChange={(e) => setDescription(e.target.value)}
+          />
         </div>
         <div>
           <label className="label">Ghi chú cho leader (tuỳ chọn)</label>
