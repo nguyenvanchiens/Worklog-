@@ -27,6 +27,7 @@ import {
   Filter,
   Loader2,
   Download,
+  FileText,
 } from 'lucide-react'
 import { useApp } from '../context/AppContext.jsx'
 import { useAuth } from '../context/AuthContext.jsx'
@@ -403,6 +404,7 @@ function ActionsTab({ actions, getMember, getProject }) {
   const { completeTaskBuild, cancelTaskBuild, updateBuildRequest } = useApp()
   const confirm = useConfirm()
   const [completeFor, setCompleteFor] = useState(null)
+  const [descFor, setDescFor] = useState(null) // task để xem mô tả
 
   const handleCancelTask = async (tk) => {
     const ok = await confirm({
@@ -428,7 +430,7 @@ function ActionsTab({ actions, getMember, getProject }) {
   }
 
   const buildActions = isLead
-    ? { onCompleteTask: setCompleteFor, onCancelTask: handleCancelTask, onBuildStatus: handleBuildStatus }
+    ? { onCompleteTask: setCompleteFor, onCancelTask: handleCancelTask, onBuildStatus: handleBuildStatus, onViewDescription: setDescFor }
     : null
 
   if (actions.length === 0) {
@@ -534,7 +536,55 @@ function ActionsTab({ actions, getMember, getProject }) {
           setCompleteFor(null)
         }}
       />
+
+      <ViewDescriptionModal
+        open={!!descFor}
+        task={descFor}
+        getProject={getProject}
+        onClose={() => setDescFor(null)}
+      />
     </div>
+  )
+}
+
+function ViewDescriptionModal({ open, task, getProject, onClose }) {
+  if (!task) return null
+  const project = getProject?.(task.projectId)
+  const desc = (task.description || '').trim()
+  return (
+    <Modal
+      open={open}
+      onClose={onClose}
+      title="Mô tả task"
+      footer={<button className="btn-secondary" onClick={onClose}>Đóng</button>}
+    >
+      <div className="space-y-3">
+        <div className="p-3 bg-gray-50 rounded-lg">
+          <div className="font-medium text-gray-800">{task.title}</div>
+          {project && <div className="text-xs text-gray-500 mt-0.5">{project.name}</div>}
+        </div>
+        <div>
+          <div className="label mb-1">Mô tả</div>
+          {desc ? (
+            <div className="text-sm text-gray-700 whitespace-pre-wrap break-words p-3 border border-gray-200 rounded-lg bg-white">
+              {desc}
+            </div>
+          ) : (
+            <div className="text-sm text-gray-400 italic p-3 border border-dashed border-gray-200 rounded-lg">
+              Task này chưa có mô tả.
+            </div>
+          )}
+        </div>
+        {task.buildNote && (
+          <div>
+            <div className="label mb-1">Ghi chú build</div>
+            <div className="text-sm text-gray-700 whitespace-pre-wrap break-words p-3 border border-gray-200 rounded-lg bg-white">
+              {task.buildNote}
+            </div>
+          </div>
+        )}
+      </div>
+    </Modal>
   )
 }
 
@@ -1368,6 +1418,14 @@ function ActionItem({ action, getMember, getProject, buildActions }) {
 
             {buildActions && (
               <div className="flex items-center gap-1.5 shrink-0" onClick={(e) => e.stopPropagation()}>
+                <button
+                  type="button"
+                  onClick={() => buildActions.onViewDescription(tk)}
+                  className="inline-flex items-center gap-1 text-xs px-2 py-1.5 rounded-md bg-gray-100 hover:bg-gray-200 text-gray-600 font-medium"
+                  title="Xem mô tả task"
+                >
+                  <FileText size={13} /> Mô tả
+                </button>
                 <button
                   type="button"
                   onClick={() => buildActions.onCompleteTask(tk)}
