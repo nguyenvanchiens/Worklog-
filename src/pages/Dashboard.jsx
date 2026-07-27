@@ -401,10 +401,12 @@ function ActionsTab({ actions, getMember, getProject }) {
 
   // ===== Cập nhật trạng thái build ngay tại đây (Lead) =====
   const { isLead } = useAuth()
-  const { completeTaskBuild, cancelTaskBuild, updateBuildRequest } = useApp()
+  const { completeTaskBuild, cancelTaskBuild, updateBuildRequest, setTaskMerged } = useApp()
   const confirm = useConfirm()
   const [completeFor, setCompleteFor] = useState(null)
   const [descFor, setDescFor] = useState(null) // task để xem mô tả
+
+  const handleToggleMerged = (tk) => setTaskMerged(tk.id, !tk.mergedAt)
 
   const handleCancelTask = async (tk) => {
     const ok = await confirm({
@@ -430,7 +432,7 @@ function ActionsTab({ actions, getMember, getProject }) {
   }
 
   const buildActions = isLead
-    ? { onCompleteTask: setCompleteFor, onCancelTask: handleCancelTask, onBuildStatus: handleBuildStatus, onViewDescription: setDescFor }
+    ? { onCompleteTask: setCompleteFor, onCancelTask: handleCancelTask, onBuildStatus: handleBuildStatus, onViewDescription: setDescFor, onToggleMerged: handleToggleMerged }
     : null
 
   if (actions.length === 0) {
@@ -1354,11 +1356,12 @@ function ActionItem({ action, getMember, getProject, buildActions }) {
     const project = getProject(tk.projectId)
     const env = tk.buildEnv || 'dev'
     const tone = BUILD_ENV_TONE[env] || BUILD_ENV_TONE.dev
+    const merged = !!tk.mergedAt
 
     return (
       <Wrap to="/tasks" className="block group">
-        <div className="flex items-stretch hover:bg-rose-50/40 transition-colors">
-          <div className={`w-1 ${tone.strip} shrink-0`} />
+        <div className={`flex items-stretch transition-colors ${merged ? 'bg-emerald-50/60 hover:bg-emerald-50' : 'hover:bg-rose-50/40'}`}>
+          <div className={`w-1 ${merged ? 'bg-emerald-400' : tone.strip} shrink-0`} />
 
           <div className="flex-1 min-w-0 flex items-center gap-3 px-4 py-3">
             <div className={`w-10 h-10 rounded-lg ${tone.iconBg} flex items-center justify-center shrink-0`}>
@@ -1388,6 +1391,11 @@ function ActionItem({ action, getMember, getProject, buildActions }) {
                 <span className="text-[11px] font-medium px-2 py-0.5 rounded-full bg-orange-50 text-orange-700 border border-orange-200">
                   Chờ build
                 </span>
+                {merged && (
+                  <span className="inline-flex items-center gap-1 text-[11px] font-semibold px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-700 border border-emerald-200">
+                    <Check size={11} /> Đã merge
+                  </span>
+                )}
               </div>
 
               <div className="flex items-center gap-2 text-xs text-gray-500 mt-1 flex-wrap">
@@ -1425,6 +1433,18 @@ function ActionItem({ action, getMember, getProject, buildActions }) {
                   title="Xem mô tả task"
                 >
                   <FileText size={13} /> Mô tả
+                </button>
+                <button
+                  type="button"
+                  onClick={() => buildActions.onToggleMerged(tk)}
+                  className={`inline-flex items-center gap-1 text-xs px-2 py-1.5 rounded-md font-medium border ${
+                    merged
+                      ? 'bg-emerald-100 hover:bg-emerald-200 text-emerald-700 border-emerald-200'
+                      : 'bg-white hover:bg-gray-100 text-gray-600 border-gray-200'
+                  }`}
+                  title={merged ? 'Bỏ đánh dấu đã merge' : 'Đánh dấu code đã merge vào nhánh build'}
+                >
+                  <Check size={13} /> {merged ? 'Đã merge' : 'Merge'}
                 </button>
                 <button
                   type="button"

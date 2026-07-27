@@ -199,6 +199,13 @@ export function AppProvider({ children }) {
       return updated
     })
 
+  const setTaskMerged = (taskId, merged) =>
+    withTaskPending(taskId, async () => {
+      const updated = await api.put(`/tasks/${taskId}/merged`, { merged })
+      setTasks((list) => list.map((t) => (t.id === taskId ? updated : t)))
+      return updated
+    })
+
   const cancelTaskBuild = (taskId) =>
     withTaskPending(taskId, async () => {
       const updated = await api.post(`/tasks/${taskId}/cancel-build`, {})
@@ -261,7 +268,7 @@ export function AppProvider({ children }) {
     addProject, removeProject,
     addTask, updateTask, updateTaskStatus, removeTask,
     requestTaskDeletion, approveTaskDeletion, cancelTaskDeletion,
-    requestTaskBuild, cancelTaskBuild, completeTaskBuild, updateTaskDescription,
+    requestTaskBuild, cancelTaskBuild, completeTaskBuild, updateTaskDescription, setTaskMerged,
     addBuildRequest, updateBuildRequest, removeBuildRequest,
     resetDemoData, refreshAll,
     // helpers
