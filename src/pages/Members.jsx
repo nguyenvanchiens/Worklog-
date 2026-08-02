@@ -9,7 +9,7 @@ import { useConfirm } from '../components/common/ConfirmProvider.jsx'
 const COLORS = ['#3a5ff5','#10b981','#f59e0b','#ef4444','#8b5cf6','#ec4899','#0ea5e9','#14b8a6']
 
 const emptyForm = { name: '', role: 'Frontend', email: '', color: COLORS[0] }
-const emptyCreds = { email: '', password: '', accountRole: 'Staff' }
+const emptyCreds = { email: '', password: '', accountRole: 'Staff', canBuild: false, canDeleteOwn: false }
 
 export default function Members() {
   const { members, tasks, addMember, updateMember, removeMember, setMemberCredentials } = useApp()
@@ -61,6 +61,8 @@ export default function Members() {
       email: m.email ?? '',
       password: '',
       accountRole: m.accountRole || 'Staff',
+      canBuild: !!m.canBuild,
+      canDeleteOwn: !!m.canDeleteOwn,
     })
     setCredsError(null)
   }
@@ -74,6 +76,8 @@ export default function Members() {
       payload.email = creds.email.trim()
     if (creds.password.trim()) payload.password = creds.password.trim()
     if (creds.accountRole !== credsTarget.accountRole) payload.accountRole = creds.accountRole
+    if (!!creds.canBuild !== !!credsTarget.canBuild) payload.canBuild = creds.canBuild
+    if (!!creds.canDeleteOwn !== !!credsTarget.canDeleteOwn) payload.canDeleteOwn = creds.canDeleteOwn
     if (Object.keys(payload).length === 0) {
       setCredsError('Chưa có thay đổi nào.')
       return
@@ -300,6 +304,38 @@ export default function Members() {
               ))}
             </div>
           </div>
+          {creds.accountRole === 'Staff' && (
+            <label className="flex items-start gap-2 p-3 rounded-lg border border-gray-200 cursor-pointer hover:bg-gray-50">
+              <input
+                type="checkbox"
+                className="mt-0.5"
+                checked={!!creds.canBuild}
+                onChange={(e) => setCreds((c) => ({ ...c, canBuild: e.target.checked }))}
+              />
+              <span className="text-sm">
+                <span className="font-medium text-gray-800">Cho phép tự build</span>
+                <span className="block text-[11px] text-gray-500 mt-0.5">
+                  Nhân viên được tự bấm "Đã build" cho task của chính mình, không cần Lead duyệt.
+                </span>
+              </span>
+            </label>
+          )}
+          {creds.accountRole === 'Staff' && (
+            <label className="flex items-start gap-2 p-3 rounded-lg border border-gray-200 cursor-pointer hover:bg-gray-50">
+              <input
+                type="checkbox"
+                className="mt-0.5"
+                checked={!!creds.canDeleteOwn}
+                onChange={(e) => setCreds((c) => ({ ...c, canDeleteOwn: e.target.checked }))}
+              />
+              <span className="text-sm">
+                <span className="font-medium text-gray-800">Cho phép tự xóa task</span>
+                <span className="block text-[11px] text-gray-500 mt-0.5">
+                  Nhân viên được xóa thẳng task của chính mình, không cần gửi yêu cầu chờ Lead duyệt.
+                </span>
+              </span>
+            </label>
+          )}
           {credsError && (
             <div className="text-sm text-red-600 bg-red-50 border border-red-100 rounded-lg px-3 py-2">
               {credsError}

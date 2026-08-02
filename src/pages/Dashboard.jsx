@@ -399,8 +399,8 @@ function ActionsTab({ actions, getMember, getProject }) {
     localStorage.setItem(ACTION_FILTER_STORAGE_KEY, filter)
   }, [filter])
 
-  // ===== Cập nhật trạng thái build ngay tại đây (Lead) =====
-  const { isLead } = useAuth()
+  // ===== Cập nhật trạng thái build ngay tại đây (Lead hoặc staff có quyền build) =====
+  const { isLead, canBuild } = useAuth()
   const { completeTaskBuild, cancelTaskBuild, updateBuildRequest, setTaskMerged } = useApp()
   const confirm = useConfirm()
   const [completeFor, setCompleteFor] = useState(null)
@@ -431,7 +431,7 @@ function ActionsTab({ actions, getMember, getProject }) {
     updateBuildRequest(b.id, { status })
   }
 
-  const buildActions = isLead
+  const buildActions = canBuild
     ? { onCompleteTask: setCompleteFor, onCancelTask: handleCancelTask, onBuildStatus: handleBuildStatus, onViewDescription: setDescFor, onToggleMerged: handleToggleMerged }
     : null
 
@@ -688,7 +688,7 @@ function TeamTab({ teamStatus, getProject }) {
     completeTaskBuild,
     updateTaskDescription,
   } = useApp()
-  const { isLead, isStaff } = useAuth()
+  const { isLead, isStaff, canBuild, canDelete } = useAuth()
   // "Leader" cũ = role chuyên môn; quyền thao tác giờ dựa vào AccountRole (Lead/Staff).
   const isLeader = isLead
   const confirm = useConfirm()
@@ -769,6 +769,8 @@ function TeamTab({ teamStatus, getProject }) {
                 row={row}
                 getProject={getProject}
                 isLeader={isLeader}
+                canBuild={canBuild}
+                canDelete={canDelete}
                 statusFilter={statusFilter}
                 onToggleStatus={toggleStatus}
                 onAddTask={() => setAddTaskFor(row.member)}
@@ -1548,6 +1550,8 @@ function MemberRow({
   row,
   getProject,
   isLeader,
+  canBuild,
+  canDelete,
   statusFilter = 'all',
   onToggleStatus,
   onAddTask,
@@ -1684,6 +1688,8 @@ function MemberRow({
               task={task}
               project={getProject(task.projectId)}
               isLeader={isLeader}
+              canBuild={canBuild}
+              canDelete={canDelete}
               onEdit={() => onEditTask(task)}
               onChangeStatus={(s) => onChangeStatus(task, s)}
               onRequestBuild={() => onRequestBuild(task)}
@@ -1706,6 +1712,8 @@ function TaskRow({
   task,
   project,
   isLeader,
+  canBuild,
+  canDelete,
   onEdit,
   onChangeStatus,
   onRequestBuild,
@@ -1841,7 +1849,7 @@ function TaskRow({
         </div>
       ) : isWaitingBuild ? (
         <div className="flex items-center gap-1">
-          {isLeader && (
+          {(isLeader || canBuild) && (
             <button
               onClick={onCompleteBuild}
               className="flex items-center gap-1 text-xs font-medium text-white bg-emerald-600 hover:bg-emerald-700 px-2.5 py-1 rounded-md"
@@ -1850,7 +1858,7 @@ function TaskRow({
               <Check size={12} /> Đã build
             </button>
           )}
-          {!isLeader && (
+          {!(isLeader || canBuild) && (
             <span className="text-[11px] text-orange-600 italic mr-1">
               Đang chờ leader build...
             </span>
@@ -1894,7 +1902,7 @@ function TaskRow({
       )}
 
       {!pendingDeletion && (
-        isLeader ? (
+        (isLeader || canDelete) ? (
           <button
             onClick={onDelete}
             className="p-1 rounded-md text-gray-400 hover:text-red-600 hover:bg-red-50"

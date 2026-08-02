@@ -91,9 +91,13 @@ export function AuthProvider({ children }) {
 
   const isLead  = user?.accountRole === 'Lead'
   const isStaff = user?.accountRole === 'Staff'
+  // Được phép tự bấm "Đã build": Lead luôn được; Staff cần cờ canBuild.
+  const canBuild = isLead || !!user?.canBuild
+  // Được phép tự xóa task của mình (không cần Lead duyệt): Lead luôn được; Staff cần cờ canDeleteOwn.
+  const canDelete = isLead || !!user?.canDeleteOwn
 
   return (
-    <AuthContext.Provider value={{ token, user, isLead, isStaff, logout, changePassword }}>
+    <AuthContext.Provider value={{ token, user, isLead, isStaff, canBuild, canDelete, logout, changePassword }}>
       {children}
     </AuthContext.Provider>
   )
